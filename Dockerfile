@@ -36,11 +36,6 @@ ENV PYTHONPATH=/app/Lily-Discord-Adapter
 # Expose the port the app runs on (for health checks and metrics)
 EXPOSE 8004
 
-# Set environment variables
-ENV DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
-ENV LILY_CORE_URL=${LILY_CORE_URL:-ws://lily-core:9002}
-ENV PORT=8004
-
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8004/health', timeout=5)" || exit 1

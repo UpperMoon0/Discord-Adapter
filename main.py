@@ -40,7 +40,8 @@ BOT = commands.Bot(
 
 # WebSocket connection to Lily-Core
 lily_core_ws = None
-lily_core_url = os.getenv("LILY_CORE_URL", "ws://lily-core:9002")
+lily_core_ws_url = os.getenv("LILY_CORE_WS_URL", "ws://lily-core:9002")
+lily_core_http_url = os.getenv("LILY_CORE_HTTP_URL", "http://lily-core:8000")
 
 # Service Discovery
 sd = None
@@ -118,7 +119,7 @@ class LilyCoreClient:
             await self.websocket.close()
 
 
-lily_client = LilyCoreClient(lily_core_url)
+lily_client = LilyCoreClient(lily_core_ws_url)
 
 
 @BOT.event

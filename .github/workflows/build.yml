@@ -41,10 +41,24 @@ jobs:
 
     - name: Run container health check
       run: |
-        docker run -d --rm --name discord-adapter-test -p 8004:8004 nstut/lily-discord-adapter:build-test
-        sleep 5
-        docker exec discord-adapter-test wget --no-verbose --tries=1 --spider http://localhost:8004/health || exit 1
+        # Run container without Discord token - Discord features disabled but HTTP server runs
+        docker run -d --rm --name discord-adapter-test \
+          -p 8004:8004 \
+          nstut/lily-discord-adapter:build-test
+        
+        # Wait for service to be ready (up to 15 seconds)
+        for i in {1..15}; do
+          if curl -s http://localhost:8004/health > /dev/null 2>&1; then
+            echo "✓ Health check passed - HTTP server is responding"
+            docker stop discord-adapter-test 2>/dev/null || true
+            exit 0
+          fi
+          sleep 1
+        done
+        
+        echo "✗ Health check failed - HTTP server not responding"
         docker stop discord-adapter-test 2>/dev/null || true
+        exit 1
 
   lint:
     runs-on: ubuntu-latest

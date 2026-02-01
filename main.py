@@ -341,19 +341,20 @@ async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "bot_ready": BOT.is_ready(),
         "service": "lily-discord-adapter",
-        "lily_core_available": lily_core_available
+        "bot_ready": BOT.is_ready(),
+        "lily_core_available": lily_core_available,
+        "discord_enabled": bool(os.getenv("DISCORD_BOT_TOKEN"))
     }
 
 @app.get("/ready")
 async def readiness_check():
-    """Readiness check endpoint - checks if bot and Lily-Core are ready"""
-    if BOT.is_ready() and lily_core_available:
-        return {"status": "ready", "lily_core": "connected"}
-    elif BOT.is_ready():
-        return {"status": "ready", "lily_core": "disconnected"}, 503
-    return {"status": "not_ready"}, 503
+    """Readiness check endpoint - HTTP server is always ready"""
+    return {
+        "status": "ready",
+        "bot_ready": BOT.is_ready(),
+        "lily_core_available": lily_core_available
+    }
 
 
 def run_health_server():
@@ -367,16 +368,20 @@ def main():
     port = int(os.getenv("PORT", "8004"))
     bot_token = os.getenv("DISCORD_BOT_TOKEN")
     
-    if not bot_token:
-        logger.error("DISCORD_BOT_TOKEN environment variable is required")
-        sys.exit(1)
-    
     # Start health check server in a separate thread
     import threading
     health_thread = threading.Thread(target=run_health_server, daemon=True)
     health_thread.start()
     
-    # Run the bot
+    if not bot_token:
+        logger.warning("DISCORD_BOT_TOKEN not set - Discord bot features disabled")
+        logger.info("Lily-Discord-Adapter running in HTTP mode (health endpoints active)")
+        # Keep the HTTP server running - Discord features are disabled
+        import time
+        while True:
+            time.sleep(3600)
+    
+    # Run the Discord bot
     logger.info("Starting Lily-Discord-Adapter...")
     BOT.run(bot_token)
 

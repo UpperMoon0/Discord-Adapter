@@ -38,13 +38,12 @@ BOT = commands.Bot(
     description='Lily Discord Adapter - Connects Discord to Lily-Core'
 )
 
-# WebSocket connection to Lily-Core
-lily_core_ws = None
-lily_core_ws_url = os.getenv("LILY_CORE_WS_URL", "ws://lily-core:9002")
-lily_core_http_url = os.getenv("LILY_CORE_HTTP_URL", "http://lily-core:8000")
-
 # Service Discovery
 sd = None
+
+# Lily-Core availability tracking
+lily_client = None
+lily_core_available = False
 
 # User sessions tracking
 user_sessions = {}
@@ -52,29 +51,61 @@ user_sessions = {}
 class LilyCoreClient:
     """Client to communicate with Lily-Core via WebSocket"""
     
-    def __init__(self, uri: str):
-        self.uri = uri
+    def __init__(self, get_url_func):
+        """
+        Initialize the Lily-Core client.
+        
+        Args:
+            get_url_func: Function that returns the Lily-Core WebSocket URL
+        """
+        self.get_url_func = get_url_func
+        self.uri = None
         self.websocket = None
         self.loop = None
         self.reconnect_delay = 5
     
+    def update_uri(self):
+        """Update the URI from Consul discovery"""
+        self.uri = self.get_url_func()
+        if self.uri:
+            logger.info(f"Discovered Lily-Core at {self.uri}")
+        return self.uri
+    
     async def connect(self):
         """Establish WebSocket connection to Lily-Core"""
+        global lily_core_available
+        
         while True:
             try:
+                # Update URI from Consul
+                if not self.uri:
+                    self.update_uri()
+                
+                if not self.uri:
+                    logger.warning("Lily-Core not found in Consul. Chat features will be disabled.")
+                    lily_core_available = False
+                    # Retry less frequently when Lily-Core is not available
+                    await asyncio.sleep(30)
+                    continue
+                    
                 self.websocket = await websockets.connect(self.uri)
                 logger.info(f"Connected to Lily-Core at {self.uri}")
+                lily_core_available = True
                 
                 # Start listening for messages
                 asyncio.create_task(self.listen())
                 return True
             except Exception as e:
                 logger.error(f"Failed to connect to Lily-Core: {e}")
+                self.uri = None  # Force re-discovery on next attempt
+                lily_core_available = False
                 logger.info(f"Reconnecting in {self.reconnect_delay} seconds...")
                 await asyncio.sleep(self.reconnect_delay)
     
     async def listen(self):
         """Listen for messages from Lily-Core"""
+        global lily_core_available
+        
         try:
             async for message in self.websocket:
                 await self.handle_message(message)
@@ -82,6 +113,8 @@ class LilyCoreClient:
             logger.warning("Lily-Core WebSocket connection closed")
         except Exception as e:
             logger.error(f"Error listening to Lily-Core: {e}")
+        finally:
+            lily_core_available = False
     
     async def handle_message(self, message: str):
         """Handle incoming messages from Lily-Core"""
@@ -119,12 +152,26 @@ class LilyCoreClient:
             await self.websocket.close()
 
 
-lily_client = LilyCoreClient(lily_core_ws_url)
+# Lily-Core client - will be initialized after sd is set
+lily_client = None
+lily_core_available = False  # Track if Lily-Core is available
+
+def get_lily_core_url():
+    """Get Lily-Core WebSocket URL from Consul.
+    
+    Returns None if Consul is unavailable or Lily-Core is not registered.
+    Consul is the single source of truth - no fallback to environment variables.
+    """
+    if sd:
+        return sd.get_lily_core_ws_url()
+    return None
 
 
 @BOT.event
 async def on_ready():
     """Bot is ready and connected to Discord"""
+    global lily_client
+    
     logger.info(f"Bot logged in as {BOT.user.name} ({BOT.user.id})")
     
     # Register with Consul for service discovery
@@ -132,6 +179,9 @@ async def on_ready():
     port = int(os.getenv("PORT", "8004"))
     sd = ServiceDiscovery(service_name="lily-discord-adapter", port=port, tags=["discord", "adapter"])
     sd.start()
+    
+    # Initialize Lily-Core client with Consul discovery
+    lily_client = LilyCoreClient(get_lily_core_url)
     
     # Connect to Lily-Core WebSocket
     await lily_client.connect()
@@ -156,6 +206,13 @@ async def on_message(message: discord.Message):
 
 async def handle_user_message(message: discord.Message):
     """Process a user message and send to Lily-Core"""
+    global lily_core_available
+    
+    # Check if Lily-Core is available
+    if not lily_core_available:
+        await message.channel.send("⚠️ Lily-Core is currently unavailable. Please try again later.")
+        return
+    
     user_id = str(message.author.id)
     username = message.author.name
     content = message.content
@@ -204,8 +261,15 @@ async def ping(ctx):
 @BOT.command(name="lily")
 async def lily_chat(ctx, *, message: str = ""):
     """Send a message to Lily-Core"""
+    global lily_core_available
+    
     if not message:
         await ctx.send("Please provide a message. Usage: `!lily <message>`")
+        return
+    
+    # Check if Lily-Core is available
+    if not lily_core_available:
+        await ctx.send("⚠️ Lily-Core is currently unavailable. Please try again later.")
         return
     
     user_id = str(ctx.author.id)
@@ -278,14 +342,17 @@ async def health_check():
     return {
         "status": "healthy",
         "bot_ready": BOT.is_ready(),
-        "service": "lily-discord-adapter"
+        "service": "lily-discord-adapter",
+        "lily_core_available": lily_core_available
     }
 
 @app.get("/ready")
 async def readiness_check():
-    """Readiness check endpoint"""
-    if BOT.is_ready():
-        return {"status": "ready"}
+    """Readiness check endpoint - checks if bot and Lily-Core are ready"""
+    if BOT.is_ready() and lily_core_available:
+        return {"status": "ready", "lily_core": "connected"}
+    elif BOT.is_ready():
+        return {"status": "ready", "lily_core": "disconnected"}, 503
     return {"status": "not_ready"}, 503
 
 

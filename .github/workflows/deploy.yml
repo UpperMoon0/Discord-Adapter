@@ -1,16 +1,13 @@
-name: Build and Push Lily-Discord-Adapter Docker Image
+name: Build and Push
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
 
     steps:
     - name: Checkout code
@@ -25,33 +22,36 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: Extract metadata
+    - name: Extract metadata for GitHub
       id: meta
       uses: docker/metadata-action@v5
       with:
         images: nstut/lily-discord-adapter
         tags: |
+          type=raw,value={{date 'YYYYMMDD-HHmmss'}}-{{sha}}
+          type=sha,prefix=
           type=ref,event=branch
-          type=ref,event=pr
-          type=sha,prefix={{branch}}-
           type=raw,value=latest,enable={{is_default_branch}}
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
         context: .
-        file: ./Dockerfile
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Trigger deploy workflow in LilyIV repo
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: peter-evans/repository-dispatch@v2
+    - name: Extract image tag
+      run: |
+        TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+        echo "IMAGE_TAG=$(basename $TAG)" >> $GITHUB_ENV
+
+    - name: Trigger main repo deployment
+      uses: peter-evans/repository-dispatch@v3
       with:
         token: ${{ secrets.GH_PAT }}
-        repository: UpperMoon0/LilyIV
+        repository: NsTut/LilyIV
         event-type: lily-discord-adapter-pushed
-        client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
+        client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "image_tag": "${{ env.IMAGE_TAG }}"}'

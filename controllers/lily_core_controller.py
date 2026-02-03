@@ -51,6 +51,8 @@ class LilyCoreController:
                 await self._handle_session_end(user_id, text)
             elif response_type == "session_no_active":
                 await self._handle_session_no_active(user_id, text)
+            elif response_type == "session_expired":
+                await self._handle_session_expired(user_id)
                 
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON from Lily-Core: {message}")
@@ -59,40 +61,47 @@ class LilyCoreController:
     
     async def _handle_response(self, user_id: str, text: str):
         """Handle regular chat response"""
-        if user_id and user_id in self._user_sessions:
-            channel = self._user_sessions[user_id].get("channel")
-            if channel:
-                await channel.send(f"**Lily:** {text}")
-                # Add assistant response to history
-                if self.session_service:
-                    self.session_service.add_to_history(user_id, "assistant", text)
+        channel = self.get_channel_for_user(user_id)
+        if channel:
+            await channel.send(f"**Lily:** {text}")
+            # Add assistant response to history
+            if self.session_service:
+                self.session_service.add_to_history(user_id, "assistant", text)
     
     async def _handle_session_start(self, user_id: str, text: str):
         """Handle session start response (greeting from LLM)"""
-        if user_id and user_id in self._user_sessions:
-            channel = self._user_sessions[user_id].get("channel")
-            if channel:
-                # Ensure session is active
-                session = self.session_service.get_session(user_id)
-                if session:
-                    session.start_session()
-                await channel.send(f"**Lily:** {text}")
+        channel = self.get_channel_for_user(user_id)
+        if channel:
+            # Ensure session is active locally
+            session = self.session_service.get_session(user_id)
+            if session:
+                session.start_session()
+            await channel.send(f"**Lily:** {text}")
     
     async def _handle_session_end(self, user_id: str, text: str):
         """Handle session end response (farewell from LLM)"""
-        if user_id and user_id in self._user_sessions:
-            channel = self._user_sessions[user_id].get("channel")
-            if channel:
-                # End active session
-                self.session_service.end_session(user_id)
-                await channel.send(f"**Lily:** {text}")
+        channel = self.get_channel_for_user(user_id)
+        if channel:
+            # End active session locally
+            self.session_service.end_session(user_id)
+            await channel.send(f"**Lily:** {text}")
     
     async def _handle_session_no_active(self, user_id: str, text: str):
         """Handle when user says goodbye but no active session"""
-        if user_id and user_id in self._user_sessions:
-            channel = self._user_sessions[user_id].get("channel")
-            if channel:
-                await channel.send(f"**Lily:** {text}")
+        channel = self.get_channel_for_user(user_id)
+        if channel:
+            await channel.send(f"**Lily:** {text}")
+
+    async def _handle_session_expired(self, user_id: str):
+        """Handle session expired event from Core"""
+        # Close local session
+        self.session_service.end_session(user_id)
+        logger.info(f"Session expired for user {user_id} (triggered by Core)")
+        
+        # Optionally notify user? Usually silent expiry is better for UX to avoid spam
+        # channel = self.get_channel_for_user(user_id)
+        # if channel:
+        #     await channel.send("**Lily:** (Session timed out)")
     
     def update_user_channel(self, user_id: str, channel):
         """Update the channel for a user's session"""
@@ -103,6 +112,12 @@ class LilyCoreController:
     
     def get_channel_for_user(self, user_id: str):
         """Get the channel for a user's session"""
+        # First try local cache
         if user_id in self._user_sessions:
             return self._user_sessions[user_id].get("channel")
+        
+        # Fallback to session service
+        session = self.session_service.get_session(user_id)
+        if session:
+            return session.channel
         return None

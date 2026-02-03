@@ -80,7 +80,7 @@ async def handle_lily_core_message(message: str):
     global lily_core_available
     try:
         data = json.loads(message)
-        if data.get("type") in ["response", "session_start", "session_end", "session_no_active"]:
+        if data.get("type") in ["response", "session_start", "session_end", "session_no_active", "session_expired"]:
             await lily_core_controller.handle_message(message)
     except json.JSONDecodeError:
         logger.error(f"Invalid JSON from Lily-Core: {message}")

@@ -1,17 +1,18 @@
 """
 Message Controller
-Handles Discord message events
+Handles Discord message events with concurrency support
 """
 
 import logging
 import json
-from typing import Dict
+from typing import Dict, Optional
 
 import discord
 from discord.ext import commands
 
 from services.session_service import SessionService
 from services.lily_core_service import LilyCoreService
+from services.concurrency_manager import ConcurrencyManager, UserRateLimiter
 
 logger = logging.getLogger("lily-discord-adapter")
 
@@ -19,7 +20,12 @@ logger = logging.getLogger("lily-discord-adapter")
 class MessageController:
     """Controller for handling Discord message events"""
     
-    def __init__(self, bot: commands.Bot, session_service: SessionService, lily_core_service: LilyCoreService):
+    def __init__(self, 
+                 bot: commands.Bot, 
+                 session_service: SessionService, 
+                 lily_core_service: LilyCoreService,
+                 concurrency_manager: ConcurrencyManager = None,
+                 user_rate_limiter: UserRateLimiter = None):
         """
         Initialize the message controller.
         
@@ -27,10 +33,14 @@ class MessageController:
             bot: Discord bot instance
             session_service: Session service for managing user sessions
             lily_core_service: Service for communicating with Lily-Core
+            concurrency_manager: Manager for concurrent message processing
+            user_rate_limiter: Per-user rate limiter
         """
         self.bot = bot
         self.session_service = session_service
         self.lily_core_service = lily_core_service
+        self.concurrency_manager = concurrency_manager
+        self.user_rate_limiter = user_rate_limiter
         self._user_sessions = {}  # Track channel for responses
         
         # Register event handler
@@ -56,6 +66,13 @@ class MessageController:
         content = message.content.strip()
         channel = message.channel
         
+        # Check for rate limiting per user
+        if self.user_rate_limiter:
+            if not await self.user_rate_limiter.acquire(user_id):
+                logger.warning(f"Rate limit exceeded for user {username}")
+                await channel.send("**Lily:** You're sending messages too fast! Please slow down.")
+                return
+        
         # Check if this is a wake-up phrase
         if self.session_service.is_wake_phrase(content):
             await self._handle_wake_phrase(user_id, username, content, channel, message)
@@ -75,6 +92,10 @@ class MessageController:
         
         # Process regular message in active session
         await self._handle_chat_message(user_id, username, content, channel, message)
+        
+        # Add user message to history
+        if self.session_service:
+            self.session_service.add_to_history(user_id, "user", content)
     
     async def _handle_wake_phrase(self, user_id: str, username: str, content: str, channel, message: discord.Message):
         """Handle wake-up phrase"""
@@ -122,9 +143,23 @@ class MessageController:
                     "filename": attachment.filename
                 })
         
-        # Send message to Lily-Core
-        message_data = self.lily_core_service.create_chat_message(user_id, username, content, attachments)
-        await self.lily_core_service.send_message(message_data)
+        # If concurrency manager is available, use it for message processing
+        if self.concurrency_manager:
+            message_data = {
+                "user_id": user_id,
+                "username": username,
+                "text": content,
+                "channel": channel,
+                "attachments": attachments
+            }
+            success = await self.concurrency_manager.submit_message(message_data)
+            if not success:
+                await channel.send("**Lily:** Message queue is full. Please try again.")
+                logger.warning(f"Message dropped for user {username} due to queue overflow")
+        else:
+            # Direct processing without queue
+            message = self.lily_core_service.create_chat_message(user_id, username, content, attachments)
+            await self.lily_core_service.send_message(message)
         
         logger.info(f"User {username} ({user_id}): {content}")
     

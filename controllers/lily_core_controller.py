@@ -63,6 +63,9 @@ class LilyCoreController:
             channel = self._user_sessions[user_id].get("channel")
             if channel:
                 await channel.send(f"**Lily:** {text}")
+                # Add assistant response to history
+                if self.session_service:
+                    self.session_service.add_to_history(user_id, "assistant", text)
     
     async def _handle_session_start(self, user_id: str, text: str):
         """Handle session start response (greeting from LLM)"""

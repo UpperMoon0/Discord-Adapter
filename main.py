@@ -54,6 +54,10 @@ sd = None
 # Global availability tracking
 lily_core_available = False
 
+# Bot enabled state - bot starts enabled but can be toggled via API
+bot_enabled = True
+bot_startup_attempted = False
+
 # Services
 session_service = None
 lily_core_service = None
@@ -186,11 +190,14 @@ app = FastAPI(
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    global bot_enabled, bot_startup_attempted
     stats = concurrency_manager.stats if concurrency_manager else {}
     return {
         "status": "healthy",
         "service": "lily-discord-adapter",
         "bot_ready": BOT.is_ready(),
+        "bot_enabled": bot_enabled,
+        "bot_startup_attempted": bot_startup_attempted,
         "lily_core_available": lily_core_available,
         "discord_enabled": bool(os.getenv("DISCORD_BOT_TOKEN")),
         "concurrency": stats
@@ -199,12 +206,69 @@ async def health_check():
 @app.get("/ready")
 async def readiness_check():
     """Readiness check endpoint - HTTP server is always ready"""
+    global bot_enabled, bot_startup_attempted
     stats = concurrency_manager.stats if concurrency_manager else {}
     return {
         "status": "ready",
         "bot_ready": BOT.is_ready(),
+        "bot_enabled": bot_enabled,
+        "bot_startup_attempted": bot_startup_attempted,
         "lily_core_available": lily_core_available,
         "concurrency": stats
+    }
+
+@app.post("/api/bot/enable")
+async def enable_bot():
+    """Enable the Discord bot"""
+    global bot_enabled, bot_startup_attempted
+    bot_token = os.getenv("DISCORD_BOT_TOKEN")
+    
+    if not bot_token:
+        return {"success": False, "message": "DISCORD_BOT_TOKEN not configured"}
+    
+    if bot_enabled:
+        return {"success": True, "message": "Bot is already enabled"}
+    
+    bot_enabled = True
+    bot_startup_attempted = True
+    logger.info("Bot enabled via API")
+    
+    # Start the bot in a new task if it's not running
+    if not BOT.is_running():
+        import asyncio
+        asyncio.create_task(start_bot(bot_token))
+    
+    return {"success": True, "message": "Bot enabled successfully"}
+
+@app.post("/api/bot/disable")
+async def disable_bot():
+    """Disable the Discord bot"""
+    global bot_enabled
+    
+    if not bot_enabled:
+        return {"success": True, "message": "Bot is already disabled"}
+    
+    bot_enabled = False
+    logger.info("Bot disabled via API - closing bot connection")
+    
+    # Close the bot connection
+    await BOT.close()
+    
+    return {"success": True, "message": "Bot disabled successfully"}
+
+@app.get("/api/bot/status")
+async def get_bot_status():
+    """Get the current bot status"""
+    global bot_enabled, bot_startup_attempted
+    bot_token = os.getenv("DISCORD_BOT_TOKEN")
+    
+    return {
+        "success": True,
+        "bot_enabled": bot_enabled,
+        "bot_running": BOT.is_running(),
+        "bot_ready": BOT.is_ready(),
+        "bot_startup_attempted": bot_startup_attempted,
+        "discord_configured": bool(bot_token)
     }
 
 
@@ -212,6 +276,14 @@ def run_health_server():
     """Run the health check server on a separate thread"""
     port = int(os.getenv("PORT", "8004"))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
+
+async def start_bot(token: str):
+    """Start the Discord bot"""
+    try:
+        await BOT.start(token)
+    except Exception as e:
+        logger.error(f"Error starting bot: {e}")
 
 
 async def shutdown():
@@ -227,6 +299,7 @@ async def shutdown():
 
 def main():
     """Main entry point"""
+    global bot_enabled, bot_startup_attempted
     port = int(os.getenv("PORT", "8004"))
     bot_token = os.getenv("DISCORD_BOT_TOKEN")
     
@@ -237,6 +310,7 @@ def main():
     
     if not bot_token:
         logger.warning("DISCORD_BOT_TOKEN not set - Discord bot features disabled")
+        bot_enabled = False
         logger.info("Lily-Discord-Adapter running in HTTP mode (health endpoints active)")
         # Keep the HTTP server running - Discord features are disabled
         import time
@@ -245,7 +319,17 @@ def main():
     
     # Run the Discord bot
     logger.info("Starting Lily-Discord-Adapter...")
-    BOT.run(bot_token)
+    bot_startup_attempted = True
+    if bot_enabled:
+        BOT.run(bot_token)
+    else:
+        logger.info("Bot is disabled, waiting for API to enable...")
+        # Keep the HTTP server running and wait for bot to be enabled
+        import time
+        while not bot_enabled:
+            time.sleep(1)
+        # Bot was enabled via API, start it now
+        BOT.run(bot_token)
 
 
 if __name__ == "__main__":

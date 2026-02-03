@@ -171,6 +171,25 @@ class SessionService:
         # Statistics
         self._total_sessions = 0
         self._expired_sessions = 0
+        
+        # Session lifecycle prompts (Discord-specific)
+        self._session_start_prompt = (
+            "The user {username} just said 'Hey Lily' to wake you up. "
+            "Respond with a friendly greeting. Keep it brief and conversational. "
+            "No markdown formatting."
+        )
+        
+        self._session_end_prompt = (
+            "The user {username} said 'Goodbye Lily'. "
+            "Respond with a friendly farewell. Keep it brief and conversational. "
+            "No markdown formatting."
+        )
+        
+        self._session_no_active_prompt = (
+            "The user said 'Goodbye Lily' but there was no active conversation. "
+            "Respond with a gentle message indicating we weren't chatting. "
+            "Keep it brief and friendly. No markdown formatting."
+        )
     
     async def start(self):
         """Start the session cleanup task"""
@@ -299,6 +318,42 @@ class SessionService:
         if len(words) > 1:
             return words[1].strip()
         return ""
+    
+    def get_session_start_prompt(self, username: str) -> str:
+        """
+        Get the prompt for session start (wake-up).
+        
+        This is Discord-specific logic that should not be in Lily-Core.
+        Lily-Core should only receive the actual message to process.
+        
+        Args:
+            username: The Discord username
+            
+        Returns:
+            The prompt to send to Lily-Core for session start
+        """
+        return self._session_start_prompt.format(username=username)
+    
+    def get_session_end_prompt(self, username: str) -> str:
+        """
+        Get the prompt for session end (goodbye).
+        
+        Args:
+            username: The Discord username
+            
+        Returns:
+            The prompt to send to Lily-Core for session end
+        """
+        return self._session_end_prompt.format(username=username)
+    
+    def get_session_no_active_prompt(self) -> str:
+        """
+        Get the prompt when user says goodbye but no active session.
+        
+        Returns:
+            The prompt to send to Lily-Core for no active session
+        """
+        return self._session_no_active_prompt
     
     @property
     def stats(self) -> dict:

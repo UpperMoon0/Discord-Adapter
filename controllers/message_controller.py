@@ -105,28 +105,39 @@ class MessageController:
         # Extract message after wake phrase
         actual_message = self.session_service.extract_message_after_wake(content)
         
-        # Send session_start event to Lily-Core
-        session_start_data = self.lily_core_service.create_session_start_message(
-            user_id, username, actual_message
-        )
-        await self.lily_core_service.send_message(session_start_data)
+        # Generate session start prompt (Discord-specific logic in Discord Adapter)
+        prompt = self.session_service.get_session_start_prompt(username)
+        
+        # If user provided additional message, include it
+        if actual_message:
+            prompt = f"{prompt}\n\nUser's message: {actual_message}"
+        
+        # Send prompt to Lily-Core as a regular chat message
+        message_data = self.lily_core_service.create_chat_message(user_id, username, prompt)
+        await self.lily_core_service.send_message(message_data)
         
         logger.info(f"User {username} woke up Lily")
     
     async def _handle_goodbye_phrase(self, user_id: str, username: str, channel):
         """Handle goodbye phrase"""
         if self.session_service.is_session_active(user_id):
-            # Send session_end event to Lily-Core
-            session_end_data = self.lily_core_service.create_session_end_message(user_id, username)
-            await self.lily_core_service.send_message(session_end_data)
+            # Generate session end prompt (Discord-specific logic)
+            prompt = self.session_service.get_session_end_prompt(username)
+            
+            # Send prompt to Lily-Core as a regular chat message
+            message_data = self.lily_core_service.create_chat_message(user_id, username, prompt)
+            await self.lily_core_service.send_message(message_data)
             
             # End the session
             self.session_service.end_session(user_id)
             logger.info(f"User {username} said goodbye to Lily")
         else:
-            # User is not in an active session - ask Lily-Core for a response
-            no_session_data = self.lily_core_service.create_session_no_active_message(user_id, username)
-            await self.lily_core_service.send_message(no_session_data)
+            # User is not in an active session - generate no-active prompt
+            prompt = self.session_service.get_session_no_active_prompt()
+            
+            # Send prompt to Lily-Core as a regular chat message
+            message_data = self.lily_core_service.create_chat_message(user_id, username, prompt)
+            await self.lily_core_service.send_message(message_data)
     
     async def _handle_chat_message(self, user_id: str, username: str, content: str, channel, message: discord.Message):
         """Handle regular chat message"""

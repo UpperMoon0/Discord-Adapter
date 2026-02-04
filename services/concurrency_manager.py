@@ -150,28 +150,35 @@ class ConcurrencyManager:
         """Worker task that processes messages from queue"""
         while self._running or not self.message_queue.empty():
             try:
-                item = await asyncio.wait_for(
-                    self.message_queue.get(),
-                    timeout=1.0
-                )
-                
-                self.message_queue.start_processing()
+                # Use a specific timeout for queue polling so workers can check shutdown flag
+                try:
+                    item = await asyncio.wait_for(
+                        self.message_queue.get(),
+                        timeout=0.5  # Check _running flag every 0.5s if queue is empty
+                    )
+                except asyncio.TimeoutError:
+                    continue  # Loop back to check self._running
+
+                await self.message_queue.start_processing()
                 try:
                     if func:
-                        await func(item)
+                        # Ensure func is awaited
+                        if asyncio.iscoroutinefunction(func) or asyncio.iscoroutine(func):
+                            await func(item)
+                        else:
+                             func(item)
                     else:
                         # Default processing - just log
                         logger.debug(f"Processing: {item}")
                 except Exception as e:
                     logger.error(f"Error processing message: {e}")
-                    self.message_queue.record_error()
+                    await self.message_queue.record_error()
                 finally:
-                    self.message_queue.stop_processing()
+                    await self.message_queue.stop_processing()
                     
-            except asyncio.TimeoutError:
-                continue
             except asyncio.CancelledError:
                 break
+
     
     async def submit_message(self, message, priority: int = 0) -> bool:
         """Submit a message for processing"""

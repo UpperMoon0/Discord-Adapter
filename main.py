@@ -284,8 +284,13 @@ async def monitor_lily_core():
                          if sd:
                              services = sd.get_services("lily-core")
                              logger.info(f"Monitor Debug: Consul reports {len(services)} 'lily-core' instances.")
+                             
                              if len(services) > 0:
-                                 logger.info(f"First instance tags: {services[0].get('tags')}")
+                                 tags = services[0].get('tags', [])
+                                 logger.info(f"First instance tags: {tags}")
+                                 
+                                 if "http" not in tags and "api" not in tags:
+                                     logger.warning("Monitor: Found 'lily-core' instance but it lacks 'http'/'api' tags. This appears to be the WebSocket endpoint. The HTTP endpoint is missing from Consul (check Lily-Core logs).")
                         
         except Exception as e:
             logger.error(f"Error in monitor_lily_core: {e}")

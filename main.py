@@ -158,6 +158,9 @@ async def on_ready():
     )
     
     lily_core_service = LilyCoreService(get_lily_core_url)
+    
+    # Initialize session service
+    session_service = SessionService()
     lily_core_controller = LilyCoreController(session_service)
     
     # Connect to Lily-Core WebSocket

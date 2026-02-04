@@ -5,6 +5,7 @@ Handles Discord bot control APIs
 
 import logging
 import os
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter
@@ -15,6 +16,7 @@ logger = logging.getLogger("lily-discord-adapter")
 BOT = None
 bot_enabled = True
 bot_startup_attempted = False
+bot_loop = None  # Store reference to bot's event loop
 
 # APIRouter for bot control endpoints
 bot_router = APIRouter(
@@ -29,12 +31,13 @@ class BotController:
     def __init__(self):
         pass
     
-    def set_bot_references(self, bot, enabled, startup_attempted):
+    def set_bot_references(self, bot, enabled, startup_attempted, loop=None):
         """Set global references to the bot and its state"""
-        global BOT, bot_enabled, bot_startup_attempted
+        global BOT, bot_enabled, bot_startup_attempted, bot_loop
         BOT = bot
         bot_enabled = enabled
         bot_startup_attempted = startup_attempted
+        bot_loop = loop
     
     async def enable_bot(self) -> dict:
         """Enable the Discord bot"""
@@ -61,7 +64,7 @@ class BotController:
     
     async def disable_bot(self) -> dict:
         """Disable the Discord bot"""
-        global bot_enabled
+        global bot_enabled, bot_loop
         
         if not bot_enabled:
             return {"success": True, "message": "Bot is already disabled"}
@@ -69,9 +72,18 @@ class BotController:
         bot_enabled = False
         logger.info("Bot disabled via API - closing bot connection")
         
-        # Close the bot connection
-        if BOT:
-            await BOT.close()
+        # Schedule bot close on bot's event loop to avoid asyncio loop issues
+        if BOT and bot_loop:
+            
+            async def close_bot():
+                try:
+                    if not BOT.is_closed():
+                        await BOT.close()
+                except Exception as e:
+                    logger.error(f"Error closing bot: {e}")
+            
+            # Schedule close on the bot's event loop
+            asyncio.run_coroutine_threadsafe(close_bot(), bot_loop)
         
         return {"success": True, "message": "Bot disabled successfully"}
     

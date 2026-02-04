@@ -171,8 +171,8 @@ async def on_ready():
     message_controller = MessageController(BOT, session_service, lily_core_service)
     command_controller = CommandController(BOT, session_service, lily_core_service)
     
-    # Update bot controller with current references
-    bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted)
+    # Update bot controller with current references and pass bot's event loop
+    bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted, asyncio.get_event_loop())
     
     logger.info("Lily-Discord-Adapter is ready!")
     
@@ -260,8 +260,8 @@ def main():
     port = int(os.getenv("PORT", "8004"))
     bot_token = os.getenv("DISCORD_BOT_TOKEN")
     
-    # Initialize bot controller references
-    bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted)
+    # Initialize bot controller references with bot's event loop
+    bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted, asyncio.get_event_loop())
     
     # Start health check server in a separate thread
     import threading
@@ -281,7 +281,7 @@ def main():
     # Run the Discord bot
     logger.info("Starting Lily-Discord-Adapter...")
     bot_startup_attempted = True
-    bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted)
+    bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted, asyncio.get_event_loop())
     if bot_enabled:
         BOT.run(bot_token)
     else:

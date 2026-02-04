@@ -1,110 +1,82 @@
 """
 Lily Core Service
-Handles communication with Lily-Core via WebSocket
+Service layer for Lily-Core integration - handles business logic
+Uses LilyCoreClient for HTTP communication
 """
 
-import json
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
-import websockets
+
+from services.lily_core_client import LilyCoreClient
 
 logger = logging.getLogger("lily-discord-adapter")
 
 
 class LilyCoreService:
-    """Service for communicating with Lily-Core"""
+    """Service for Lily-Core integration - business logic layer"""
     
-    def __init__(self, get_url_func):
+    def __init__(self, get_http_url_func):
         """
         Initialize the Lily-Core service.
         
         Args:
-            get_url_func: Function that returns the Lily-Core WebSocket URL
+            get_http_url_func: Function that returns the Lily-Core HTTP URL
         """
-        self.get_url_func = get_url_func
-        self.uri = None
-        self.websocket = None
-        self.reconnect_delay = 5
+        self._client = LilyCoreClient(get_http_url_func)
     
-    async def connect(self) -> bool:
-        """Establish WebSocket connection to Lily-Core"""
-        while True:
-            try:
-                # Update URI from Consul
-                if not self.uri:
-                    self.uri = self.get_url_func()
-                
-                if not self.uri:
-                    logger.warning("Lily-Core not found in Consul. Chat features will be disabled.")
-                    await asyncio.sleep(30)
-                    continue
-                    
-                self.websocket = await websockets.connect(self.uri)
-                logger.info(f"Connected to Lily-Core at {self.uri}")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to connect to Lily-Core: {e}")
-                self.uri = None
-                logger.info(f"Reconnecting in {self.reconnect_delay} seconds...")
-                await asyncio.sleep(self.reconnect_delay)
+    async def send_chat_message(
+        self, 
+        user_id: str, 
+        username: str, 
+        text: str, 
+        attachments: list = None
+    ) -> Optional[str]:
+        """
+        Send a chat message to Lily-Core and get the response.
+        
+        Args:
+            user_id: The user's ID
+            username: The user's username
+            text: The message text
+            attachments: Optional list of attachments
+        
+        Returns:
+            The response text from Lily-Core, or None on error
+        """
+        # Create the message payload
+        message = self._create_chat_message(user_id, username, text, attachments)
+        
+        # Send via client
+        result = await self._client.send_chat_request(
+            message=message.get("text", ""),
+            user_id=user_id,
+            username=username
+        )
+        
+        if result and result.get("response"):
+            return result.get("response")
+        
+        return None
     
-    async def listen(self, message_handler):
-        """Listen for messages from Lily-Core"""
-        try:
-            async for message in self.websocket:
-                await message_handler(message)
-        except websockets.ConnectionClosed:
-            logger.warning("Lily-Core WebSocket connection closed")
-        except Exception as e:
-            logger.error(f"Error listening to Lily-Core: {e}")
+    async def is_available(self) -> bool:
+        """Check if Lily-Core is available"""
+        return await self._client.health_check()
     
-    async def send_message(self, message: dict) -> bool:
-        """Send message to Lily-Core"""
-        if self.websocket:
-            try:
-                await self.websocket.send(json.dumps(message))
-                logger.info(f"Sent to Lily-Core: {message}")
-                return True
-            except Exception as e:
-                logger.error(f"Error sending to Lily-Core: {e}")
-        return False
+    async def close(self):
+        """Close the service and underlying client"""
+        await self._client.close()
     
-    def create_session_start_message(self, user_id: str, username: str, text: str = "") -> Dict[str, Any]:
-        """Create a session start message"""
-        return {
-            "type": "session_start",
-            "user_id": user_id,
-            "username": username,
-            "text": text,
-            "source": "discord",
-            "timestamp": datetime.now().isoformat()
-        }
+    # ==================== Message Builders (Business Logic) ====================
     
-    def create_session_end_message(self, user_id: str, username: str) -> Dict[str, Any]:
-        """Create a session end message"""
-        return {
-            "type": "session_end",
-            "user_id": user_id,
-            "username": username,
-            "text": "",
-            "source": "discord",
-            "timestamp": datetime.now().isoformat()
-        }
-    
-    def create_session_no_active_message(self, user_id: str, username: str) -> Dict[str, Any]:
-        """Create a session no active message"""
-        return {
-            "type": "session_no_active",
-            "user_id": user_id,
-            "username": username,
-            "text": "",
-            "source": "discord",
-            "timestamp": datetime.now().isoformat()
-        }
-    
-    def create_chat_message(self, user_id: str, username: str, text: str, attachments: list = None) -> Dict[str, Any]:
-        """Create a chat message"""
+    def _create_chat_message(
+        self, 
+        user_id: str, 
+        username: str, 
+        text: str, 
+        attachments: list = None
+    ) -> Dict[str, Any]:
+        """Create a chat message payload"""
         return {
             "type": "message",
             "user_id": user_id,
@@ -115,11 +87,48 @@ class LilyCoreService:
             "timestamp": datetime.now().isoformat()
         }
     
-    async def close(self):
-        """Close WebSocket connection"""
-        if self.websocket:
-            await self.websocket.close()
-
-
-# Import asyncio at module level
-import asyncio
+    def create_session_start_message(
+        self, 
+        user_id: str, 
+        username: str, 
+        text: str = ""
+    ) -> Dict[str, Any]:
+        """Create a session start message payload"""
+        return {
+            "type": "session_start",
+            "user_id": user_id,
+            "username": username,
+            "text": text,
+            "source": "discord",
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def create_session_end_message(
+        self, 
+        user_id: str, 
+        username: str
+    ) -> Dict[str, Any]:
+        """Create a session end message payload"""
+        return {
+            "type": "session_end",
+            "user_id": user_id,
+            "username": username,
+            "text": "",
+            "source": "discord",
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def create_session_no_active_message(
+        self, 
+        user_id: str, 
+        username: str
+    ) -> Dict[str, Any]:
+        """Create a session no active message payload"""
+        return {
+            "type": "session_no_active",
+            "user_id": user_id,
+            "username": username,
+            "text": "",
+            "source": "discord",
+            "timestamp": datetime.now().isoformat()
+        }

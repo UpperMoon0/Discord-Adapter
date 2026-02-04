@@ -1,7 +1,7 @@
 """
 Lily-Discord-Adapter
 Discord bot adapter for Lily-Core
-Handles Discord messages and communicates with Lily-Core via WebSocket
+Handles Discord messages and communicates with Lily-Core via HTTP
 """
 
 import os
@@ -13,7 +13,6 @@ from datetime import datetime
 
 import discord
 from discord.ext import commands
-import websockets
 import requests
 
 sys.path.insert(0, '/app/Lily-Discord-Adapter')
@@ -28,7 +27,6 @@ from services.concurrency_manager import (
 )
 from controllers.message_controller import MessageController
 from controllers.command_controller import CommandController
-from controllers.lily_core_controller import LilyCoreController
 from controllers.bot_controller import bot_controller, bot_router
 
 # Configure logging
@@ -64,45 +62,19 @@ session_service = None
 lily_core_service = None
 message_controller = None
 command_controller = None
-lily_core_controller = None
 concurrency_manager = None
 user_rate_limiter = None
 
 
-def get_lily_core_url():
-    """Get Lily-Core WebSocket URL from Consul.
+def get_lily_core_http_url():
+    """Get Lily-Core HTTP URL from Consul.
     
     Returns None if Consul is unavailable or Lily-Core is not registered.
     Consul is the single source of truth - no fallback to environment variables.
     """
     if sd:
-        return sd.get_lily_core_ws_url()
+        return sd.get_lily_core_http_url()
     return None
-
-
-async def handle_lily_core_message(message: str):
-    """Handle incoming messages from Lily-Core"""
-    global lily_core_available
-    try:
-        data = json.loads(message)
-        if data.get("type") in ["response", "session_start", "session_end", "session_no_active", "session_expired"]:
-            await lily_core_controller.handle_message(message)
-    except json.JSONDecodeError:
-        logger.error(f"Invalid JSON from Lily-Core: {message}")
-
-
-async def listen_lily_core():
-    """Listen for messages from Lily-Core"""
-    global lily_core_available
-    try:
-        async for message in lily_core_service.websocket:
-            await handle_lily_core_message(message)
-    except websockets.ConnectionClosed:
-        logger.warning("Lily-Core WebSocket connection closed")
-    except Exception as e:
-        logger.error(f"Error listening to Lily-Core: {e}")
-    finally:
-        lily_core_available = False
 
 
 async def process_message_task(message_data: dict):
@@ -113,16 +85,30 @@ async def process_message_task(message_data: dict):
     channel = message_data.get("channel")
     attachments = message_data.get("attachments", [])
     
-    # Create and send message to Lily-Core
-    message = lily_core_service.create_chat_message(user_id, username, content, attachments)
-    await lily_core_service.send_message(message)
+    # Send message to Lily-Core via HTTP (service handles message creation)
+    response_text = await lily_core_service.send_chat_message(
+        user_id=user_id,
+        username=username,
+        text=content,
+        attachments=attachments
+    )
+    
+    if response_text:
+        # Send Lily's response back to Discord
+        await channel.send(f"**Lily:** {response_text}")
+        
+        # Add assistant response to history
+        session_service.add_to_history(user_id, "assistant", response_text)
+    else:
+        logger.error(f"Failed to get response from Lily-Core for user {user_id}")
+        await channel.send("**Lily:** I'm having trouble connecting to my brain right now. Please try again later.")
 
 
 @BOT.event
 async def on_ready():
     """Bot is ready and connected to Discord"""
     global session_service, lily_core_service, message_controller, command_controller
-    global lily_core_controller, concurrency_manager, user_rate_limiter, lily_core_available
+    global concurrency_manager, user_rate_limiter, lily_core_available
     
     logger.info(f"Bot logged in as {BOT.user.name} ({BOT.user.id})")
     
@@ -157,18 +143,20 @@ async def on_ready():
         worker_func=process_message_task
     )
     
-    lily_core_service = LilyCoreService(get_lily_core_url)
+    # Initialize Lily-Core service with HTTP
+    lily_core_service = LilyCoreService(get_lily_core_http_url)
+    
+    # Check if Lily-Core is available
+    http_url = await lily_core_service.get_http_url()
+    if http_url:
+        lily_core_available = True
+        logger.info(f"Lily-Core HTTP URL: {http_url}")
+    else:
+        lily_core_available = False
+        logger.warning("Lily-Core not found in Consul. Chat features will be disabled.")
     
     # Initialize session service
     session_service = SessionService()
-    lily_core_controller = LilyCoreController(session_service)
-    
-    # Connect to Lily-Core WebSocket
-    lily_core_available = await lily_core_service.connect()
-    
-    if lily_core_available:
-        # Start listening for messages from Lily-Core
-        asyncio.create_task(listen_lily_core())
     
     # Initialize controllers
     message_controller = MessageController(BOT, session_service, lily_core_service)
@@ -181,6 +169,7 @@ async def on_ready():
     
     # Log concurrency configuration
     logger.info(f"Concurrency config: max_concurrent={max_concurrent}, queue_size={queue_size}, workers=4")
+    logger.info(f"Lily-Core available: {lily_core_available}")
 
 
 # Health check endpoint for Docker

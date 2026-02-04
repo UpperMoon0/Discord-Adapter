@@ -14,7 +14,6 @@ from datetime import datetime
 
 import discord
 from discord.ext import commands
-import requests
 
 sys.path.insert(0, '/app/Lily-Discord-Adapter')
 

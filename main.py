@@ -7,6 +7,7 @@ Handles Discord messages and communicates with Lily-Core via HTTP
 import os
 import sys
 import asyncio
+import time
 import logging
 import json
 from datetime import datetime

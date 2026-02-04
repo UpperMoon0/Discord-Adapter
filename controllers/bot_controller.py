@@ -64,26 +64,18 @@ class BotController:
     
     async def disable_bot(self) -> dict:
         """Disable the Discord bot"""
-        global bot_enabled, bot_loop
+        global bot_enabled
         
         if not bot_enabled:
             return {"success": True, "message": "Bot is already disabled"}
         
         bot_enabled = False
-        logger.info("Bot disabled via API - closing bot connection")
+        logger.info("Bot disabled via API - bot will close gracefully on next shutdown")
         
-        # Schedule bot close on bot's event loop to avoid asyncio loop issues
-        if BOT and bot_loop:
-            
-            async def close_bot():
-                try:
-                    if not BOT.is_closed():
-                        await BOT.close()
-                except Exception as e:
-                    logger.error(f"Error closing bot: {e}")
-            
-            # Schedule close on the bot's event loop
-            asyncio.run_coroutine_threadsafe(close_bot(), bot_loop)
+        # Note: We don't call BOT.close() here because:
+        # 1. FastAPI runs in a different asyncio loop than the bot
+        # 2. Calling close() from wrong loop causes RuntimeError
+        # 3. The bot will be closed gracefully during shutdown() in main.py
         
         return {"success": True, "message": "Bot disabled successfully"}
     

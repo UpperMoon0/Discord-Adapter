@@ -17,6 +17,7 @@ BOT = None
 bot_enabled = True
 bot_startup_attempted = False
 bot_loop = None  # Store reference to bot's event loop
+lily_core_available = False
 
 # APIRouter for bot control endpoints
 bot_router = APIRouter(
@@ -38,6 +39,11 @@ class BotController:
         bot_enabled = enabled
         bot_startup_attempted = startup_attempted
         bot_loop = loop
+    
+    def set_lily_core_status(self, available: bool):
+        """Set Lily-Core availability status"""
+        global lily_core_available
+        lily_core_available = available
     
     async def enable_bot(self) -> dict:
         """Enable the Discord bot"""
@@ -85,7 +91,7 @@ class BotController:
     
     def get_status(self) -> dict:
         """Get the current bot status"""
-        global bot_enabled, bot_startup_attempted
+        global bot_enabled, bot_startup_attempted, lily_core_available
         bot_token = os.getenv("DISCORD_BOT_TOKEN")
         
         return {
@@ -94,17 +100,19 @@ class BotController:
             "bot_running": not BOT.is_closed() if BOT else False,
             "bot_ready": BOT.is_ready() if BOT else False,
             "bot_startup_attempted": bot_startup_attempted,
-            "discord_configured": bool(bot_token)
+            "discord_configured": bool(bot_token),
+            "lily_core_available": lily_core_available
         }
     
     def get_health_info(self, concurrency_manager) -> dict:
         """Get health check information"""
-        global bot_enabled, bot_startup_attempted
+        global bot_enabled, bot_startup_attempted, lily_core_available
         stats = concurrency_manager.stats if concurrency_manager else {}
         
         return {
             "bot_enabled": bot_enabled,
             "bot_startup_attempted": bot_startup_attempted,
+            "lily_core_available": lily_core_available,
             "concurrency": stats
         }
 

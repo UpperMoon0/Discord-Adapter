@@ -138,6 +138,9 @@ async def initialize_services():
         lily_core_available = False
         logger.warning("Lily-Core not found in Consul. Chat features will be disabled.")
     
+    # Update controller status
+    bot_controller.set_lily_core_status(lily_core_available)
+
     # Initialize session service
     session_service = SessionService()
     
@@ -251,6 +254,22 @@ def run_health_server():
     uvicorn.run(app, host="0.0.0.0", port=port)
 
 
+async def monitor_lily_core():
+    """Background task to monitor Lily-Core availability"""
+    global lily_core_available
+    while True:
+        try:
+            if not lily_core_available and lily_core_service:
+                http_url = await lily_core_service.get_http_url()
+                if http_url:
+                    lily_core_available = True
+                    bot_controller.set_lily_core_status(True)
+                    logger.info(f"Lily-Core discovered at: {http_url}")
+        except Exception:
+            pass
+        await asyncio.sleep(30)
+
+
 async def shutdown():
     """Graceful shutdown"""
     global concurrency_manager, session_service, BOT
@@ -277,6 +296,9 @@ async def main():
     
     # Initialize services
     await initialize_services()
+    
+    # Start background monitoring
+    asyncio.create_task(monitor_lily_core())
     
     # Initialize bot controller references with the loop (no bot yet)
     bot_controller.set_bot_references(None, bot_enabled, bot_startup_attempted, loop)

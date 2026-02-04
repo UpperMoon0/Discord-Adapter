@@ -10,10 +10,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: .
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -60,6 +56,13 @@ jobs:
         docker stop discord-adapter-test 2>/dev/null || true
         exit 1
 
+    - name: Run tests
+      run: |
+        docker run --rm \
+          -w /app/Lily-Discord-Adapter \
+          nstut/lily-discord-adapter:build-test \
+          pytest tests/ -v
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -82,17 +85,3 @@ jobs:
           echo "requirements.txt not found"
           exit 1
         fi
-
-  test:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Run tests in Docker
-      run: |
-        docker run --rm \
-          -w /app/Lily-Discord-Adapter \
-          nstut/lily-discord-adapter:build-test \
-          pytest tests/ -v

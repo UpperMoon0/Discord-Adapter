@@ -36,17 +36,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("lily-discord-adapter")
 
-# Bot configuration
-INTENTS = discord.Intents.default()
-INTENTS.message_content = True
-INTENTS.voice_states = True
-
-BOT = commands.Bot(
-    command_prefix='!',
-    intents=INTENTS,
-    description='Lily Discord Adapter - Connects Discord to Lily-Core'
-)
-
 # Service Discovery
 sd = None
 
@@ -64,6 +53,7 @@ message_controller = None
 command_controller = None
 concurrency_manager = None
 user_rate_limiter = None
+BOT = None
 
 
 def get_lily_core_http_url():
@@ -104,21 +94,14 @@ async def process_message_task(message_data: dict):
         await channel.send("**Lily:** I'm having trouble connecting to my brain right now. Please try again later.")
 
 
-@BOT.event
-async def on_ready():
-    """Bot is ready and connected to Discord"""
-    global session_service, lily_core_service, message_controller, command_controller
-    global concurrency_manager, user_rate_limiter, lily_core_available
-    
-    logger.info(f"Bot logged in as {BOT.user.name} ({BOT.user.id})")
+async def initialize_services():
+    """Initialize all services once"""
+    global sd, session_service, lily_core_service, concurrency_manager, user_rate_limiter, lily_core_available
     
     # Register with Consul for service discovery
-    global sd
     port = int(os.getenv("PORT", "8004"))
     sd = ServiceDiscovery(service_name="lily-discord-adapter", port=port, tags=["discord", "adapter"])
     sd.start()
-    
-    # Initialize services
     
     # Configure rate limiting
     rate_config = RateLimitConfig(
@@ -158,18 +141,40 @@ async def on_ready():
     # Initialize session service
     session_service = SessionService()
     
-    # Initialize controllers
-    message_controller = MessageController(BOT, session_service, lily_core_service)
-    command_controller = CommandController(BOT, session_service, lily_core_service)
-    
-    # Update bot controller with current references and pass bot's event loop
-    bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted, asyncio.get_event_loop())
-    
-    logger.info("Lily-Discord-Adapter is ready!")
-    
     # Log concurrency configuration
     logger.info(f"Concurrency config: max_concurrent={max_concurrent}, queue_size={queue_size}, workers=4")
     logger.info(f"Lily-Core available: {lily_core_available}")
+
+
+def create_discord_bot():
+    """Create and configure a new Discord bot instance"""
+    INTENTS = discord.Intents.default()
+    INTENTS.message_content = True
+    INTENTS.voice_states = True
+    
+    bot = commands.Bot(
+        command_prefix='!',
+        intents=INTENTS,
+        description='Lily Discord Adapter - Connects Discord to Lily-Core'
+    )
+    
+    @bot.event
+    async def on_ready():
+        """Bot is ready and connected to Discord"""
+        global message_controller, command_controller
+        
+        logger.info(f"Bot logged in as {bot.user.name} ({bot.user.id})")
+        
+        # Initialize controllers with the current bot instance
+        message_controller = MessageController(bot, session_service, lily_core_service)
+        command_controller = CommandController(bot, session_service, lily_core_service)
+        
+        # Update bot controller with current references
+        bot_controller.set_bot_references(bot, bot_enabled, bot_startup_attempted, asyncio.get_running_loop())
+        
+        logger.info("Lily-Discord-Adapter is ready!")
+
+    return bot
 
 
 # Health check endpoint for Docker
@@ -200,10 +205,16 @@ async def health_check():
     global bot_enabled, bot_startup_attempted
     stats = concurrency_manager.stats if concurrency_manager else {}
     health_info = bot_controller.get_health_info(concurrency_manager)
+    
+    # Check bot ready state safely
+    bot_ready = False
+    if BOT and not BOT.is_closed():
+        bot_ready = BOT.is_ready()
+        
     return {
         "status": "healthy",
         "service": "lily-discord-adapter",
-        "bot_ready": BOT.is_ready(),
+        "bot_ready": bot_ready,
         "bot_enabled": health_info.get("bot_enabled", bot_enabled),
         "bot_startup_attempted": health_info.get("bot_startup_attempted", bot_startup_attempted),
         "lily_core_available": lily_core_available,
@@ -218,9 +229,15 @@ async def readiness_check():
     global bot_enabled, bot_startup_attempted
     stats = concurrency_manager.stats if concurrency_manager else {}
     health_info = bot_controller.get_health_info(concurrency_manager)
+    
+    # Check bot ready state safely
+    bot_ready = False
+    if BOT and not BOT.is_closed():
+        bot_ready = BOT.is_ready()
+
     return {
         "status": "ready",
-        "bot_ready": BOT.is_ready(),
+        "bot_ready": bot_ready,
         "bot_enabled": health_info.get("bot_enabled", bot_enabled),
         "bot_startup_attempted": health_info.get("bot_startup_attempted", bot_startup_attempted),
         "lily_core_available": lily_core_available,
@@ -234,17 +251,9 @@ def run_health_server():
     uvicorn.run(app, host="0.0.0.0", port=port)
 
 
-async def start_bot(token: str):
-    """Start the Discord bot"""
-    try:
-        await BOT.start(token)
-    except Exception as e:
-        logger.error(f"Error starting bot: {e}")
-
-
 async def shutdown():
     """Graceful shutdown"""
-    global concurrency_manager, session_service
+    global concurrency_manager, session_service, BOT
     if concurrency_manager:
         await concurrency_manager.shutdown()
     if session_service:
@@ -252,11 +261,13 @@ async def shutdown():
         session_service._sessions.clear()
     if lily_core_service:
         await lily_core_service.close()
+    if BOT and not BOT.is_closed():
+        await BOT.close()
 
 
 async def main():
     """Main entry point"""
-    global bot_enabled, bot_startup_attempted
+    global bot_enabled, bot_startup_attempted, BOT
     
     port = int(os.getenv("PORT", "8004"))
     bot_token = os.getenv("DISCORD_BOT_TOKEN")
@@ -264,8 +275,11 @@ async def main():
     # Get the current event loop
     loop = asyncio.get_running_loop()
     
-    # Initialize bot controller references with the loop
-    bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted, loop)
+    # Initialize services
+    await initialize_services()
+    
+    # Initialize bot controller references with the loop (no bot yet)
+    bot_controller.set_bot_references(None, bot_enabled, bot_startup_attempted, loop)
     
     # Start health check server in a separate thread
     import threading
@@ -275,7 +289,7 @@ async def main():
     if not bot_token:
         logger.warning("DISCORD_BOT_TOKEN not set - Discord bot features disabled")
         bot_enabled = False
-        bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted, loop)
+        bot_controller.set_bot_references(None, bot_enabled, bot_startup_attempted, loop)
         logger.info("Lily-Discord-Adapter running in HTTP mode (health endpoints active)")
         # Keep the HTTP server running - Discord features are disabled
         while True:
@@ -294,8 +308,12 @@ async def main():
         if current_enabled:
             try:
                 logger.info("Bot enabled. Starting execution...")
-                # Ensure bot uses the current loop
-                BOT.loop = loop
+                
+                # Create a fresh Bot instance for each run
+                BOT = create_discord_bot()
+                
+                # Update controller with new bot
+                bot_controller.set_bot_references(BOT, True, True, loop)
                 
                 # Start the bot
                 await BOT.start(bot_token)
@@ -305,6 +323,14 @@ async def main():
                 logger.error(f"Bot execution error: {e}")
                 # Prevent tight loop if it crashes immediately
                 await asyncio.sleep(5)
+            finally:
+                # Ensure bot is cleaned up
+                if BOT and not BOT.is_closed():
+                    try:
+                        await BOT.close()
+                    except:
+                        pass
+                BOT = None
         else:
             # Bot is disabled, wait
             # Log periodically to show we are alive

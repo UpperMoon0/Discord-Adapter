@@ -87,7 +87,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-    - name: Verify image is functional
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run tests in Docker
       run: |
-        echo "Build completed successfully. Image ready for deployment."
-        docker images nstut/lily-discord-adapter:build-test --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}"
+        docker run --rm \
+          -w /app/Lily-Discord-Adapter \
+          nstut/lily-discord-adapter:build-test \
+          pytest tests/ -v

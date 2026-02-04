@@ -113,8 +113,7 @@ class MessageController:
             prompt = f"{prompt}\n\nUser's message: {actual_message}"
         
         # Send prompt to Lily-Core as a regular chat message
-        message_data = self.lily_core_service.create_chat_message(user_id, username, prompt)
-        await self.lily_core_service.send_message(message_data)
+        await self.lily_core_service.send_chat_message(user_id, username, prompt)
         
         logger.info(f"User {username} woke up Lily")
     
@@ -125,8 +124,7 @@ class MessageController:
             prompt = self.session_service.get_session_end_prompt(username)
             
             # Send prompt to Lily-Core as a regular chat message
-            message_data = self.lily_core_service.create_chat_message(user_id, username, prompt)
-            await self.lily_core_service.send_message(message_data)
+            await self.lily_core_service.send_chat_message(user_id, username, prompt)
             
             # End the session
             self.session_service.end_session(user_id)
@@ -136,8 +134,7 @@ class MessageController:
             prompt = self.session_service.get_session_no_active_prompt()
             
             # Send prompt to Lily-Core as a regular chat message
-            message_data = self.lily_core_service.create_chat_message(user_id, username, prompt)
-            await self.lily_core_service.send_message(message_data)
+            await self.lily_core_service.send_chat_message(user_id, username, prompt)
     
     async def _handle_chat_message(self, user_id: str, username: str, content: str, channel, message: discord.Message):
         """Handle regular chat message"""
@@ -169,8 +166,7 @@ class MessageController:
                 logger.warning(f"Message dropped for user {username} due to queue overflow")
         else:
             # Direct processing without queue
-            message = self.lily_core_service.create_chat_message(user_id, username, content, attachments)
-            await self.lily_core_service.send_message(message)
+            await self.lily_core_service.send_chat_message(user_id, username, content, attachments)
         
         logger.info(f"User {username} ({user_id}): {content}")
     

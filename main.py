@@ -174,11 +174,20 @@ async def on_ready():
 
 # Health check endpoint for Docker
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 app = FastAPI(
     title="Lily-Discord-Adapter Health",
     description="Health check endpoint for the Discord adapter"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Include bot control router
@@ -245,15 +254,18 @@ async def shutdown():
         await lily_core_service.close()
 
 
-def main():
+async def main():
     """Main entry point"""
     global bot_enabled, bot_startup_attempted
     
     port = int(os.getenv("PORT", "8004"))
     bot_token = os.getenv("DISCORD_BOT_TOKEN")
     
-    # Initialize bot controller references with bot's event loop
-    bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted, asyncio.get_event_loop())
+    # Get the current event loop
+    loop = asyncio.get_running_loop()
+    
+    # Initialize bot controller references with the loop
+    bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted, loop)
     
     # Start health check server in a separate thread
     import threading
@@ -263,28 +275,46 @@ def main():
     if not bot_token:
         logger.warning("DISCORD_BOT_TOKEN not set - Discord bot features disabled")
         bot_enabled = False
-        bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted)
+        bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted, loop)
         logger.info("Lily-Discord-Adapter running in HTTP mode (health endpoints active)")
         # Keep the HTTP server running - Discord features are disabled
-        import time
         while True:
-            time.sleep(3600)
+            await asyncio.sleep(3600)
     
     # Run the Discord bot
     logger.info("Starting Lily-Discord-Adapter...")
     bot_startup_attempted = True
-    bot_controller.set_bot_references(BOT, bot_enabled, bot_startup_attempted, asyncio.get_event_loop())
-    if bot_enabled:
-        BOT.run(bot_token)
-    else:
-        logger.info("Bot is disabled, waiting for API to enable...")
-        # Keep the HTTP server running and wait for bot to be enabled
-        import time
-        while not bot_enabled:
-            time.sleep(1)
-        # Bot was enabled via API, start it now
-        BOT.run(bot_token)
+    
+    # Main execution loop
+    while True:
+        # Check current status from controller (source of truth)
+        status = bot_controller.get_status()
+        current_enabled = status.get("bot_enabled", False)
+        
+        if current_enabled:
+            try:
+                logger.info("Bot enabled. Starting execution...")
+                # Ensure bot uses the current loop
+                BOT.loop = loop
+                
+                # Start the bot
+                await BOT.start(bot_token)
+                
+                logger.info("Bot execution finished (stopped).")
+            except Exception as e:
+                logger.error(f"Bot execution error: {e}")
+                # Prevent tight loop if it crashes immediately
+                await asyncio.sleep(5)
+        else:
+            # Bot is disabled, wait
+            # Log periodically to show we are alive
+            if int(time.time()) % 60 == 0:
+                logger.info("Bot is disabled. Waiting for enable signal...")
+            await asyncio.sleep(1)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

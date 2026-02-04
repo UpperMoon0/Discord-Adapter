@@ -54,11 +54,7 @@ class BotController:
         bot_startup_attempted = True
         logger.info("Bot enabled via API")
         
-        # Start the bot in a new task if it's not running
-        if BOT and not BOT.is_closed():
-            from main import start_bot
-            import asyncio
-            asyncio.create_task(start_bot(bot_token))
+        # Bot startup is handled by main.py loop
         
         return {"success": True, "message": "Bot enabled successfully"}
     

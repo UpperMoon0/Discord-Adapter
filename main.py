@@ -29,7 +29,7 @@ from services.concurrency_manager import (
 from controllers.message_controller import MessageController
 from controllers.command_controller import CommandController
 from controllers.lily_core_controller import LilyCoreController
-from controllers.bot_controller import bot_controller, bot_app
+from controllers.bot_controller import bot_controller, bot_router
 
 # Configure logging
 logging.basicConfig(
@@ -192,7 +192,7 @@ app = FastAPI(
 )
 
 # Include bot control router
-app.include_router(bot_app)
+app.include_router(bot_router)
 
 
 @app.get("/health")

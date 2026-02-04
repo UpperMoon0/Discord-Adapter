@@ -7,7 +7,7 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import APIRouter
 
 logger = logging.getLogger("lily-discord-adapter")
 
@@ -16,10 +16,10 @@ BOT = None
 bot_enabled = True
 bot_startup_attempted = False
 
-# FastAPI app for bot control endpoints
-bot_app = FastAPI(
-    title="Lily-Discord-Adapter Bot Control",
-    description="API for controlling the Discord bot"
+# APIRouter for bot control endpoints
+bot_router = APIRouter(
+    prefix="/api/bot",
+    tags=["Bot Control"]
 )
 
 
@@ -106,19 +106,19 @@ bot_controller = BotController()
 
 
 # Register API endpoints
-@bot_app.post("/api/bot/enable")
+@bot_router.post("/enable")
 async def enable_bot():
     """Enable the Discord bot"""
     return await bot_controller.enable_bot()
 
 
-@bot_app.post("/api/bot/disable")
+@bot_router.post("/disable")
 async def disable_bot():
     """Disable the Discord bot"""
     return await bot_controller.disable_bot()
 
 
-@bot_app.get("/api/bot/status")
+@bot_router.get("/status")
 async def get_bot_status():
     """Get the current bot status"""
     return bot_controller.get_status()

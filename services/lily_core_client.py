@@ -25,9 +25,9 @@ class LilyCoreClient:
         self.http_url = None
         self.http_client = httpx.AsyncClient(timeout=120.0)
     
-    async def get_base_url(self) -> Optional[str]:
+    async def get_base_url(self, force_refresh: bool = False) -> Optional[str]:
         """Get the Lily-Core base HTTP URL"""
-        if not self.http_url:
+        if force_refresh or not self.http_url:
             self.http_url = self.get_http_url_func()
         return self.http_url
     
@@ -76,6 +76,7 @@ class LilyCoreClient:
                 
         except httpx.RequestError as e:
             logger.error(f"HTTP request error: {e}")
+            self.http_url = None  # Invalidate cache on connection error
             return None
         except Exception as e:
             logger.error(f"Unexpected error in HTTP request: {e}")
@@ -93,6 +94,11 @@ class LilyCoreClient:
         
         try:
             response = await self.http_client.get(f"{http_url}/health", timeout=10.0)
-            return response.status_code == 200
+            if response.status_code == 200:
+                return True
+            else:
+                self.http_url = None  # Invalidate cache
+                return False
         except Exception:
+            self.http_url = None  # Invalidate cache
             return False

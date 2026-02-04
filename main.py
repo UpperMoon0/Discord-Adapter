@@ -257,17 +257,29 @@ def run_health_server():
 async def monitor_lily_core():
     """Background task to monitor Lily-Core availability"""
     global lily_core_available
+    logger.info("Starting Lily-Core monitor task")
     while True:
         try:
-            if not lily_core_available and lily_core_service:
-                http_url = await lily_core_service.get_http_url()
-                if http_url:
-                    lily_core_available = True
-                    bot_controller.set_lily_core_status(True)
-                    logger.info(f"Lily-Core discovered at: {http_url}")
-        except Exception:
-            pass
-        await asyncio.sleep(30)
+            if lily_core_service:
+                # Check actual availability (health check)
+                # This will invalidate cache if connection fails, triggering a fresh Consul lookup next time
+                is_available = await lily_core_service.is_available()
+                
+                # Update status if changed
+                if is_available != lily_core_available:
+                    lily_core_available = is_available
+                    bot_controller.set_lily_core_status(is_available)
+                    
+                    if is_available:
+                        http_url = await lily_core_service.get_http_url()
+                        logger.info(f"Lily-Core discovered/connected at: {http_url}")
+                    else:
+                        logger.warning("Lily-Core lost connection or not found.")
+                        
+        except Exception as e:
+            logger.error(f"Error in monitor_lily_core: {e}")
+            
+        await asyncio.sleep(10)
 
 
 async def shutdown():

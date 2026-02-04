@@ -258,11 +258,11 @@ async def monitor_lily_core():
     """Background task to monitor Lily-Core availability"""
     global lily_core_available
     logger.info("Starting Lily-Core monitor task")
+    counter = 0
     while True:
         try:
             if lily_core_service:
                 # Check actual availability (health check)
-                # This will invalidate cache if connection fails, triggering a fresh Consul lookup next time
                 is_available = await lily_core_service.is_available()
                 
                 # Update status if changed
@@ -275,6 +275,17 @@ async def monitor_lily_core():
                         logger.info(f"Lily-Core discovered/connected at: {http_url}")
                     else:
                         logger.warning("Lily-Core lost connection or not found.")
+                
+                elif not is_available:
+                    counter += 1
+                    if counter % 3 == 0: # Log every 30s (3 * 10s)
+                         logger.info("Monitor: Lily-Core still not reachable. Retrying...")
+                         # Diagnostic: Check raw service discovery
+                         if sd:
+                             services = sd.get_services("lily-core")
+                             logger.info(f"Monitor Debug: Consul reports {len(services)} 'lily-core' instances.")
+                             if len(services) > 0:
+                                 logger.info(f"First instance tags: {services[0].get('tags')}")
                         
         except Exception as e:
             logger.error(f"Error in monitor_lily_core: {e}")

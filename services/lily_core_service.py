@@ -63,6 +63,10 @@ class LilyCoreService:
         """Check if Lily-Core is available"""
         return await self._client.health_check()
     
+    async def get_http_url(self) -> Optional[str]:
+        """Get the Lily-Core HTTP URL"""
+        return await self._client.get_base_url()
+
     async def close(self):
         """Close the service and underlying client"""
         await self._client.close()

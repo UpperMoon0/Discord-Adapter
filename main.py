@@ -133,8 +133,6 @@ async def on_ready():
     sd.start()
     
     # Initialize services
-    session_service = SessionService()
-    await session_service.start()
     
     # Configure rate limiting
     rate_config = RateLimitConfig(
@@ -249,7 +247,8 @@ async def shutdown():
     if concurrency_manager:
         await concurrency_manager.shutdown()
     if session_service:
-        await session_service.stop()
+        # SessionService doesn't have stop(), just clear sessions
+        session_service._sessions.clear()
     if lily_core_service:
         await lily_core_service.close()
 

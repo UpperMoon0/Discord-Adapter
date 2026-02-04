@@ -52,7 +52,7 @@ class BotController:
         logger.info("Bot enabled via API")
         
         # Start the bot in a new task if it's not running
-        if BOT and not BOT.is_running():
+        if BOT and not BOT.is_closed():
             from main import start_bot
             import asyncio
             asyncio.create_task(start_bot(bot_token))
@@ -83,7 +83,7 @@ class BotController:
         return {
             "success": True,
             "bot_enabled": bot_enabled,
-            "bot_running": BOT.is_running() if BOT else False,
+            "bot_running": not BOT.is_closed() if BOT else False,
             "bot_ready": BOT.is_ready() if BOT else False,
             "bot_startup_attempted": bot_startup_attempted,
             "discord_configured": bool(bot_token)

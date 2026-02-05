@@ -130,7 +130,7 @@ class MessageController:
             # Send prompt to Lily-Core as a regular chat message
             response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
             if response_text:
-                await channel.send(f"**Lily:** {response_text}")
+                await channel.send(f"{response_text}")
                 self.session_service.add_to_history(user_id, "assistant", response_text)
         
         logger.info(f"User {username} woke up Lily")
@@ -157,7 +157,7 @@ class MessageController:
                  # Send prompt to Lily-Core as a regular chat message
                  response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
                  if response_text:
-                     await channel.send(f"**Lily:** {response_text}")
+                     await channel.send(f"{response_text}")
                      self.session_service.add_to_history(user_id, "assistant", response_text)
             
             # End the session
@@ -181,7 +181,7 @@ class MessageController:
                  # Send prompt to Lily-Core as a regular chat message
                  response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
                  if response_text:
-                     await channel.send(f"**Lily:** {response_text}")
+                     await channel.send(f"{response_text}")
     
     async def _handle_chat_message(self, user_id: str, username: str, content: str, channel, message: discord.Message):
         """Handle regular chat message"""
@@ -215,7 +215,7 @@ class MessageController:
             # Direct processing without queue
             response_text = await self.lily_core_service.send_chat_message(user_id, username, content, attachments)
             if response_text:
-                await channel.send(f"**Lily:** {response_text}")
+                await channel.send(f"{response_text}")
                 self.session_service.add_to_history(user_id, "assistant", response_text)
         
         logger.info(f"User {username} ({user_id}): {content}")

@@ -63,7 +63,7 @@ class LilyCoreController:
         """Handle regular chat response"""
         channel = self.get_channel_for_user(user_id)
         if channel:
-            await channel.send(f"**Lily:** {text}")
+            await channel.send(f"{text}")
             # Add assistant response to history
             if self.session_service:
                 self.session_service.add_to_history(user_id, "assistant", text)
@@ -76,7 +76,7 @@ class LilyCoreController:
             session = self.session_service.get_session(user_id)
             if session:
                 session.start_session()
-            await channel.send(f"**Lily:** {text}")
+            await channel.send(f"{text}")
     
     async def _handle_session_end(self, user_id: str, text: str):
         """Handle session end response (farewell from LLM)"""
@@ -84,13 +84,13 @@ class LilyCoreController:
         if channel:
             # End active session locally
             self.session_service.end_session(user_id)
-            await channel.send(f"**Lily:** {text}")
+            await channel.send(f"{text}")
     
     async def _handle_session_no_active(self, user_id: str, text: str):
         """Handle when user says goodbye but no active session"""
         channel = self.get_channel_for_user(user_id)
         if channel:
-            await channel.send(f"**Lily:** {text}")
+            await channel.send(f"{text}")
 
     async def _handle_session_expired(self, user_id: str):
         """Handle session expired event from Core"""

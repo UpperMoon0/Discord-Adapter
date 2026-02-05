@@ -169,7 +169,13 @@ def create_discord_bot():
         logger.info(f"Bot logged in as {bot.user.name} ({bot.user.id})")
         
         # Initialize controllers with the current bot instance
-        message_controller = MessageController(bot, session_service, lily_core_service)
+        message_controller = MessageController(
+            bot, 
+            session_service, 
+            lily_core_service,
+            concurrency_manager,
+            user_rate_limiter
+        )
         command_controller = CommandController(bot, session_service, lily_core_service)
         
         # Update bot controller with current references

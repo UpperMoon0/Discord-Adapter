@@ -112,8 +112,26 @@ class MessageController:
         if actual_message:
             prompt = f"{prompt}\n\nUser's message: {actual_message}"
         
-        # Send prompt to Lily-Core as a regular chat message
-        await self.lily_core_service.send_chat_message(user_id, username, prompt)
+        # If concurrency manager is available, use it for message processing
+        if self.concurrency_manager:
+            # We treat the wake phrase + prompt as a submitted message
+            message_data = {
+                "user_id": user_id,
+                "username": username,
+                "text": prompt, # This is key: we send the prompt as the user's "message" to Lily-Core
+                "channel": channel,
+                "attachments": []
+            }
+            success = await self.concurrency_manager.submit_message(message_data)
+            if not success:
+                await channel.send("**Lily:** Message queue is full. Please try again.")
+                logger.warning(f"Wake message dropped for user {username} due to queue overflow")
+        else:
+            # Send prompt to Lily-Core as a regular chat message
+            response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
+            if response_text:
+                await channel.send(f"**Lily:** {response_text}")
+                self.session_service.add_to_history(user_id, "assistant", response_text)
         
         logger.info(f"User {username} woke up Lily")
     
@@ -123,8 +141,24 @@ class MessageController:
             # Generate session end prompt (Discord-specific logic)
             prompt = self.session_service.get_session_end_prompt(username)
             
-            # Send prompt to Lily-Core as a regular chat message
-            await self.lily_core_service.send_chat_message(user_id, username, prompt)
+            # If concurrency manager is available, use it
+            if self.concurrency_manager:
+                 message_data = {
+                    "user_id": user_id,
+                    "username": username,
+                    "text": prompt,
+                    "channel": channel,
+                    "attachments": []
+                }
+                 success = await self.concurrency_manager.submit_message(message_data)
+                 if not success:
+                     await self.lily_core_service.send_chat_message(user_id, username, prompt)
+            else:
+                 # Send prompt to Lily-Core as a regular chat message
+                 response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
+                 if response_text:
+                     await channel.send(f"**Lily:** {response_text}")
+                     self.session_service.add_to_history(user_id, "assistant", response_text)
             
             # End the session
             self.session_service.end_session(user_id)
@@ -133,8 +167,21 @@ class MessageController:
             # User is not in an active session - generate no-active prompt
             prompt = self.session_service.get_session_no_active_prompt()
             
-            # Send prompt to Lily-Core as a regular chat message
-            await self.lily_core_service.send_chat_message(user_id, username, prompt)
+            # Use concurrency manager if available
+            if self.concurrency_manager:
+                 message_data = {
+                    "user_id": user_id,
+                    "username": username,
+                    "text": prompt,
+                    "channel": channel,
+                    "attachments": []
+                }
+                 await self.concurrency_manager.submit_message(message_data)
+            else:
+                 # Send prompt to Lily-Core as a regular chat message
+                 response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
+                 if response_text:
+                     await channel.send(f"**Lily:** {response_text}")
     
     async def _handle_chat_message(self, user_id: str, username: str, content: str, channel, message: discord.Message):
         """Handle regular chat message"""
@@ -166,7 +213,10 @@ class MessageController:
                 logger.warning(f"Message dropped for user {username} due to queue overflow")
         else:
             # Direct processing without queue
-            await self.lily_core_service.send_chat_message(user_id, username, content, attachments)
+            response_text = await self.lily_core_service.send_chat_message(user_id, username, content, attachments)
+            if response_text:
+                await channel.send(f"**Lily:** {response_text}")
+                self.session_service.add_to_history(user_id, "assistant", response_text)
         
         logger.info(f"User {username} ({user_id}): {content}")
     

@@ -22,6 +22,9 @@ YTDL_FORMAT_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    },
 }
 
 # FFmpeg options
@@ -32,14 +35,16 @@ FFMPEG_OPTIONS = {
 
 def get_ytdl():
     """Create a yt-dlp instance with current cookies configuration"""
-    # Check for cookies file dynamically
-    cookies_file = os.getenv('YOUTUBE_COOKIES_FILE', '/app/data/cookies.txt')
+    # Cookies file managed by CookiesService
+    cookies_file = '/app/data/cookies.txt'
     
     opts = YTDL_FORMAT_OPTIONS.copy()
     
-    if cookies_file and os.path.exists(cookies_file):
+    if os.path.exists(cookies_file):
         opts['cookiefile'] = cookies_file
-        # logger.debug(f"Using cookies from {cookies_file}")
+        logger.info(f"Using cookies from {cookies_file}")
+    else:
+        logger.info("Cookies file not found. Using visitor/guest mode.")
     
     return yt_dlp.YoutubeDL(opts)
 

@@ -11,8 +11,8 @@ logger = logging.getLogger("lily-discord-adapter")
 
 class CookiesService:
     def __init__(self):
-        # Default to /app/data/cookies.txt if not set
-        self.file_path = os.getenv("YOUTUBE_COOKIES_FILE", "/app/data/cookies.txt")
+        # Always use the persistent data volume path
+        self.file_path = "/app/data/cookies.txt"
 
     def get_file_path(self) -> str:
         """Get the configured file path"""

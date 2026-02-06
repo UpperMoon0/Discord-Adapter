@@ -25,6 +25,7 @@ from services.concurrency_manager import (
     RateLimitConfig,
     UserRateLimiter
 )
+from services.music_service import MusicService
 from controllers.message_controller import MessageController
 from controllers.command_controller import CommandController
 from controllers.bot_controller import bot_controller, bot_router
@@ -49,6 +50,7 @@ bot_startup_attempted = False
 # Services
 session_service = None
 lily_core_service = None
+music_service = None
 message_controller = None
 command_controller = None
 concurrency_manager = None
@@ -96,7 +98,7 @@ async def process_message_task(message_data: dict):
 
 async def initialize_services():
     """Initialize all services once"""
-    global sd, session_service, lily_core_service, concurrency_manager, user_rate_limiter, lily_core_available
+    global sd, session_service, lily_core_service, music_service, concurrency_manager, user_rate_limiter, lily_core_available
     
     # Register with Consul for service discovery
     port = int(os.getenv("PORT", "8004"))
@@ -143,6 +145,9 @@ async def initialize_services():
 
     # Initialize session service
     session_service = SessionService()
+
+    # Initialize music service
+    music_service = MusicService()
     
     # Log concurrency configuration
     logger.info(f"Concurrency config: max_concurrent={max_concurrent}, queue_size={queue_size}, workers=4")
@@ -170,14 +175,21 @@ def create_discord_bot():
         
         # Initialize controllers with the current bot instance
         message_controller = MessageController(
-            bot, 
-            session_service, 
+            bot,
+            session_service,
             lily_core_service,
             concurrency_manager,
             user_rate_limiter
         )
-        command_controller = CommandController(bot, session_service, lily_core_service)
+        command_controller = CommandController(bot, session_service, lily_core_service, music_service)
         
+        # Sync slash commands
+        try:
+            synced = await bot.tree.sync()
+            logger.info(f"Synced {len(synced)} command(s)")
+        except Exception as e:
+            logger.error(f"Failed to sync commands: {e}")
+
         # Update bot controller with current references
         bot_controller.set_bot_references(bot, bot_enabled, bot_startup_attempted, asyncio.get_running_loop())
         

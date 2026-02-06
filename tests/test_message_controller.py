@@ -37,6 +37,10 @@ async def test_handle_chat_message():
     lily_core_service.send_chat_message.assert_called_once_with(
         "123", "TestUser", "Hello Lily", []
     )
+    # The controller awaits the channel.send coroutine when a response is returned
+    # Since mocked methods return None or awaitable, check if channel.send was called
+    message.channel.send.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_wake_phrase():
@@ -45,7 +49,9 @@ async def test_wake_phrase():
     session_service = MagicMock(spec=SessionService)
     lily_core_service = MagicMock(spec=LilyCoreService)
     
-    lily_core_service.send_chat_message = AsyncMock()
+    # Make send_chat_message return a non-empty string so channel.send is called
+    lily_core_service.send_chat_message.return_value = "Hello there!"
+    lily_core_service.send_chat_message = AsyncMock(return_value="Hello there!")
     
     controller = MessageController(bot, session_service, lily_core_service)
     
@@ -60,6 +66,9 @@ async def test_wake_phrase():
     message.content = "Hey Lily Hello"
     message.channel = MagicMock()
     
+    # Important: Configure the AsyncMock for channel.send
+    message.channel.send = AsyncMock()
+    
     await controller.handle_user_message(message)
     
     # Verify session created
@@ -70,6 +79,10 @@ async def test_wake_phrase():
     lily_core_service.send_chat_message.assert_called_once_with(
         "123", "TestUser", expected_prompt
     )
+    
+    # Verify channel.send was called with the response
+    message.channel.send.assert_called_once_with("Hello there!")
+
 
 @pytest.mark.asyncio
 async def test_goodbye_phrase():
@@ -78,7 +91,7 @@ async def test_goodbye_phrase():
     session_service = MagicMock(spec=SessionService)
     lily_core_service = MagicMock(spec=LilyCoreService)
     
-    lily_core_service.send_chat_message = AsyncMock()
+    lily_core_service.send_chat_message = AsyncMock(return_value="Goodbye!")
     
     controller = MessageController(bot, session_service, lily_core_service)
     
@@ -94,6 +107,9 @@ async def test_goodbye_phrase():
     message.content = "Bye Lily"
     message.channel = MagicMock()
     
+    # Important: Configure the AsyncMock for channel.send
+    message.channel.send = AsyncMock()
+    
     await controller.handle_user_message(message)
     
     # Verify session ended
@@ -103,3 +119,6 @@ async def test_goodbye_phrase():
     lily_core_service.send_chat_message.assert_called_once_with(
         "123", "TestUser", "Goodbye Prompt"
     )
+    
+    # Verify channel.send was called
+    message.channel.send.assert_called_once_with("Goodbye!")

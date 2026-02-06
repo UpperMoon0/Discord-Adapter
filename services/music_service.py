@@ -24,22 +24,24 @@ YTDL_FORMAT_OPTIONS = {
     'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
 }
 
-# Add cookie file if provided in env or present in current directory
-cookies_file = os.getenv('YOUTUBE_COOKIES_FILE')
-if not cookies_file and os.path.exists('cookies.txt'):
-    cookies_file = 'cookies.txt'
-
-if cookies_file and os.path.exists(cookies_file):
-    YTDL_FORMAT_OPTIONS['cookiefile'] = cookies_file
-    logger.info(f"Using YouTube cookies from {cookies_file}")
-
 # FFmpeg options
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn',
 }
 
-ytdl = yt_dlp.YoutubeDL(YTDL_FORMAT_OPTIONS)
+def get_ytdl():
+    """Create a yt-dlp instance with current cookies configuration"""
+    # Check for cookies file dynamically
+    cookies_file = os.getenv('YOUTUBE_COOKIES_FILE', '/app/data/cookies.txt')
+    
+    opts = YTDL_FORMAT_OPTIONS.copy()
+    
+    if cookies_file and os.path.exists(cookies_file):
+        opts['cookiefile'] = cookies_file
+        # logger.debug(f"Using cookies from {cookies_file}")
+    
+    return yt_dlp.YoutubeDL(opts)
 
 
 class YTDLSource(discord.PCMVolumeTransformer):
@@ -52,6 +54,10 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
         loop = loop or asyncio.get_event_loop()
+        
+        # Create fresh instance to pick up any new cookies
+        ytdl = get_ytdl()
+        
         try:
              data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
         except yt_dlp.utils.DownloadError as e:

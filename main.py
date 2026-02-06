@@ -29,6 +29,7 @@ from services.music_service import MusicService
 from controllers.message_controller import MessageController
 from controllers.command_controller import CommandController
 from controllers.bot_controller import bot_controller, bot_router
+from controllers.cookies_controller import cookies_router
 
 # Configure logging
 logging.basicConfig(
@@ -218,6 +219,7 @@ app.add_middleware(
 
 # Include bot control router
 app.include_router(bot_router)
+app.include_router(cookies_router)
 
 
 @app.get("/health")

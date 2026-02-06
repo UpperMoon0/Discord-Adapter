@@ -1,46 +1,26 @@
 """
 Session Service
-Manages user sessions with Lily bot including conversation history and session lifecycle
+Manages user sessions with Lily bot - session lifecycle and state only.
+Conversation history is stored in Lily-Core's MemoryService.
 """
 
-import asyncio
 import logging
-from typing import Dict, Optional, List
+from typing import Dict, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
-from collections import deque
 import uuid
 
 logger = logging.getLogger("lily-discord-adapter")
 
 
 @dataclass
-class ConversationMessage:
-    """Represents a single message in the conversation history"""
-    role: str  # "user" or "assistant"
-    content: str
-    timestamp: datetime = field(default_factory=datetime.now)
-    message_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary"""
-        return {
-            "role": self.role,
-            "content": self.content,
-            "timestamp": self.timestamp.isoformat(),
-            "message_id": self.message_id
-        }
-
-
-@dataclass
 class SessionConfig:
     """Configuration for session behavior"""
-    max_history_messages: int = 20  # Max messages in conversation history (sliding window)
     max_sessions: int = 1000  # Maximum total sessions
 
 
 class UserSession:
-    """Represents a user's active session with Lily"""
+    """Represents a user's active session with Lily - state only, no history"""
     
     def __init__(self, 
                  user_id: str, 
@@ -55,9 +35,6 @@ class UserSession:
         self.channel = channel
         self.config = config or SessionConfig()
         
-        # Conversation history with sliding window
-        self.history: deque = deque(maxlen=self.config.max_history_messages)
-        
         # Session lifecycle
         self.created_at = datetime.now()
         self.active = True
@@ -66,19 +43,6 @@ class UserSession:
         self.session_id = str(uuid.uuid4())[:8]
         
         logger.info(f"Session created: {self.session_id} for user {username} ({user_id})")
-    
-    def add_message(self, role: str, content: str):
-        """Add a message to conversation history"""
-        msg = ConversationMessage(role=role, content=content)
-        self.history.append(msg)
-        logger.debug(f"Added message to session {self.session_id}: {role}: {content[:50]}...")
-    
-    def get_history(self, limit: int = None) -> List[dict]:
-        """Get conversation history"""
-        messages = list(self.history)
-        if limit:
-            messages = messages[-limit:]
-        return [msg.to_dict() for msg in messages]
     
     def is_active(self) -> bool:
         """Check if session is active"""
@@ -161,14 +125,6 @@ class SessionService:
         if session is None:
             return False
         return session.is_active()
-    
-    def add_to_history(self, user_id: str, role: str, content: str) -> bool:
-        """Add message to user's conversation history"""
-        session = self.get_session(user_id)
-        if session and session.is_active():
-            session.add_message(role, content)
-            return True
-        return False
     
     def is_wake_phrase(self, content: str) -> bool:
         """Check if content starts with wake phrase"""

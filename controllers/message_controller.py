@@ -92,10 +92,6 @@ class MessageController:
         
         # Process regular message in active session
         await self._handle_chat_message(user_id, username, content, channel, message)
-        
-        # Add user message to history
-        if self.session_service:
-            self.session_service.add_to_history(user_id, "user", content)
     
     async def _handle_wake_phrase(self, user_id: str, username: str, content: str, channel, message: discord.Message):
         """Handle wake-up phrase"""
@@ -131,7 +127,6 @@ class MessageController:
             response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
             if response_text:
                 await channel.send(f"{response_text}")
-                self.session_service.add_to_history(user_id, "assistant", response_text)
         
         logger.info(f"User {username} woke up Lily")
     
@@ -158,7 +153,6 @@ class MessageController:
                  response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
                  if response_text:
                      await channel.send(f"{response_text}")
-                     self.session_service.add_to_history(user_id, "assistant", response_text)
             
             # End the session
             self.session_service.end_session(user_id)
@@ -216,7 +210,6 @@ class MessageController:
             response_text = await self.lily_core_service.send_chat_message(user_id, username, content, attachments)
             if response_text:
                 await channel.send(f"{response_text}")
-                self.session_service.add_to_history(user_id, "assistant", response_text)
         
         logger.info(f"User {username} ({user_id}): {content}")
     

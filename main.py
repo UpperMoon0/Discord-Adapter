@@ -20,6 +20,7 @@ sys.path.insert(0, '/app/Lily-Discord-Adapter')
 from utils.service_discovery import ServiceDiscovery
 from services.session_service import SessionService
 from services.lily_core_service import LilyCoreService
+from services.bot_service import bot_service
 from services.concurrency_manager import (
     ConcurrencyManager,
     RateLimitConfig,
@@ -28,7 +29,7 @@ from services.concurrency_manager import (
 from services.music_service import MusicService
 from controllers.message_controller import MessageController
 from controllers.command_controller import CommandController
-from controllers.bot_controller import bot_controller, bot_router
+from controllers.bot_controller import bot_router
 from controllers.cookies_controller import cookies_router
 
 # Configure logging
@@ -142,7 +143,7 @@ async def initialize_services():
         logger.warning("Lily-Core not found in Consul. Chat features will be disabled.")
     
     # Update controller status
-    bot_controller.set_lily_core_status(lily_core_available)
+    bot_service.set_lily_core_status(lily_core_available)
 
     # Initialize session service
     session_service = SessionService()
@@ -192,7 +193,7 @@ def create_discord_bot():
             logger.error(f"Failed to sync commands: {e}")
 
         # Update bot controller with current references
-        bot_controller.set_bot_references(bot, bot_enabled, bot_startup_attempted, asyncio.get_running_loop())
+        bot_service.set_bot_references(bot, bot_enabled, bot_startup_attempted, asyncio.get_running_loop())
         
         logger.info("Lily-Discord-Adapter is ready!")
 
@@ -227,7 +228,7 @@ async def health_check():
     """Health check endpoint"""
     global bot_enabled, bot_startup_attempted
     stats = concurrency_manager.stats if concurrency_manager else {}
-    health_info = bot_controller.get_health_info(concurrency_manager)
+    health_info = bot_service.get_health_info(concurrency_manager)
     
     # Check bot ready state safely
     bot_ready = False
@@ -251,7 +252,7 @@ async def readiness_check():
     """Readiness check endpoint - HTTP server is always ready"""
     global bot_enabled, bot_startup_attempted
     stats = concurrency_manager.stats if concurrency_manager else {}
-    health_info = bot_controller.get_health_info(concurrency_manager)
+    health_info = bot_service.get_health_info(concurrency_manager)
     
     # Check bot ready state safely
     bot_ready = False
@@ -287,7 +288,7 @@ async def monitor_lily_core():
                 # Update status if changed
                 if is_available != lily_core_available:
                     lily_core_available = is_available
-                    bot_controller.set_lily_core_status(is_available)
+                    bot_service.set_lily_core_status(is_available)
                     
                     if is_available:
                         http_url = await lily_core_service.get_http_url()
@@ -332,7 +333,7 @@ async def main():
     asyncio.create_task(monitor_lily_core())
     
     # Initialize bot controller references with the loop (no bot yet)
-    bot_controller.set_bot_references(None, bot_enabled, bot_startup_attempted, loop)
+    bot_service.set_bot_references(None, bot_enabled, bot_startup_attempted, loop)
     
     # Start health check server in a separate thread
     import threading
@@ -342,7 +343,7 @@ async def main():
     if not bot_token:
         logger.warning("DISCORD_BOT_TOKEN not set - Discord bot features disabled")
         bot_enabled = False
-        bot_controller.set_bot_references(None, bot_enabled, bot_startup_attempted, loop)
+        bot_service.set_bot_references(None, bot_enabled, bot_startup_attempted, loop)
         logger.info("Lily-Discord-Adapter running in HTTP mode (health endpoints active)")
         # Keep the HTTP server running - Discord features are disabled
         while True:
@@ -355,7 +356,7 @@ async def main():
     # Main execution loop
     while True:
         # Check current status from controller (source of truth)
-        status = bot_controller.get_status()
+        status = bot_service.get_status()
         current_enabled = status.get("bot_enabled", False)
         
         if current_enabled:
@@ -366,7 +367,7 @@ async def main():
                 BOT = create_discord_bot()
                 
                 # Update controller with new bot
-                bot_controller.set_bot_references(BOT, True, True, loop)
+                bot_service.set_bot_references(BOT, True, True, loop)
                 
                 # Start the bot
                 await BOT.start(bot_token)

@@ -5,9 +5,13 @@ Handles Discord bot control APIs
 
 import logging
 from fastapi import APIRouter
+from pydantic import BaseModel
 from services.bot_service import bot_service
 
 logger = logging.getLogger("lily-discord-adapter")
+
+class GuestModeRequest(BaseModel):
+    enabled: bool
 
 # APIRouter for bot control endpoints
 bot_router = APIRouter(
@@ -26,6 +30,12 @@ async def enable_bot():
 async def disable_bot():
     """Disable the Discord bot"""
     return await bot_service.disable_bot()
+
+
+@bot_router.post("/youtube-guest-mode")
+async def set_guest_mode(request: GuestModeRequest):
+    """Set guest mode for YouTube downloads"""
+    return bot_service.set_guest_mode(request.enabled)
 
 
 @bot_router.get("/status")

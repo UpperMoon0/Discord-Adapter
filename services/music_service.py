@@ -33,6 +33,8 @@ FFMPEG_OPTIONS = {
     'options': '-vn',
 }
 
+from services.bot_service import bot_service
+
 def get_ytdl():
     """Create a yt-dlp instance with current cookies configuration"""
     # Cookies file managed by CookiesService
@@ -40,7 +42,9 @@ def get_ytdl():
     
     opts = YTDL_FORMAT_OPTIONS.copy()
     
-    if os.path.exists(cookies_file):
+    if bot_service.get_guest_mode():
+        logger.info("Guest mode forced. Ignoring cookies file.")
+    elif os.path.exists(cookies_file):
         opts['cookiefile'] = cookies_file
         logger.info(f"Using cookies from {cookies_file}")
     else:

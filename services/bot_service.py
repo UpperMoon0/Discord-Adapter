@@ -16,6 +16,7 @@ class BotService:
     def __init__(self):
         self.bot = None
         self.bot_enabled = True
+        self.guest_mode_enabled = False
         self.bot_startup_attempted = False
         self.bot_loop = None  # Store reference to bot's event loop
         self.lily_core_available = False
@@ -30,6 +31,16 @@ class BotService:
     def set_lily_core_status(self, available: bool):
         """Set Lily-Core availability status"""
         self.lily_core_available = available
+        
+    def set_guest_mode(self, enabled: bool):
+        """Set guest mode for YouTube downloads"""
+        self.guest_mode_enabled = enabled
+        logger.info(f"Guest mode set to: {enabled}")
+        return {"success": True, "guest_mode": enabled}
+
+    def get_guest_mode(self) -> bool:
+        """Get guest mode status"""
+        return self.guest_mode_enabled
     
     async def enable_bot(self) -> dict:
         """Enable the Discord bot"""
@@ -79,6 +90,7 @@ class BotService:
         return {
             "success": True,
             "bot_enabled": self.bot_enabled,
+            "guest_mode_enabled": self.guest_mode_enabled,
             "bot_running": not self.bot.is_closed() if self.bot else False,
             "bot_ready": self.bot.is_ready() if self.bot else False,
             "bot_startup_attempted": self.bot_startup_attempted,

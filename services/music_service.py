@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from collections import deque
 from typing import Dict, Optional
 import discord
@@ -21,7 +22,19 @@ YTDL_FORMAT_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
+    # Use Android client to potential bypass age/login restrictions
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['android'],
+        },
+    },
 }
+
+# Add cookie file if provided in env
+cookies_file = os.getenv('YOUTUBE_COOKIES_FILE')
+if cookies_file and os.path.exists(cookies_file):
+    YTDL_FORMAT_OPTIONS['cookiefile'] = cookies_file
+    logger.info(f"Using YouTube cookies from {cookies_file}")
 
 # FFmpeg options
 FFMPEG_OPTIONS = {
@@ -42,7 +55,11 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
         loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        try:
+             data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        except yt_dlp.utils.DownloadError as e:
+            logger.error(f"yt-dlp download error: {e}")
+            raise e
 
         if 'entries' in data:
             # take first item from a playlist
@@ -114,7 +131,12 @@ class MusicService:
                 )
                 await ctx.send(f"Now playing: **{player.title}**")
             except Exception as e:
-                await ctx.send(f"An error occurred: {e}")
+                error_msg = str(e)
+                if "Sign in to confirm" in error_msg:
+                    await ctx.send("I couldn't play that song because YouTube requires sign-in. Please try a different song or check bot configuration.")
+                else:
+                    await ctx.send(f"An error occurred playing this song.")
+                
                 logger.error(f"Error playing audio in guild {guild_id}: {e}")
                 # Try next song if this one failed
                 await self.play_next(guild_id)
@@ -144,3 +166,4 @@ class MusicService:
             ctx.voice_client.stop()
             await ctx.voice_client.disconnect()
             await ctx.send("Stopped playing and disconnected.")
+

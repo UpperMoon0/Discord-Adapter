@@ -22,12 +22,6 @@ YTDL_FORMAT_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
-    # Use Android client to potential bypass age/login restrictions
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['android'],
-        },
-    },
 }
 
 # Add cookie file if provided in env

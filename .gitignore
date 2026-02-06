@@ -66,6 +66,7 @@ venv.bak/
 data/
 logs/
 *.log
+cookies.txt
 
 # VS Code
 .vscode/

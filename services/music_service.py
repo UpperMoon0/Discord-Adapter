@@ -24,8 +24,11 @@ YTDL_FORMAT_OPTIONS = {
     'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
 }
 
-# Add cookie file if provided in env
+# Add cookie file if provided in env or present in current directory
 cookies_file = os.getenv('YOUTUBE_COOKIES_FILE')
+if not cookies_file and os.path.exists('cookies.txt'):
+    cookies_file = 'cookies.txt'
+
 if cookies_file and os.path.exists(cookies_file):
     YTDL_FORMAT_OPTIONS['cookiefile'] = cookies_file
     logger.info(f"Using YouTube cookies from {cookies_file}")

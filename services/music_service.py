@@ -19,8 +19,8 @@ FFMPEG_OPTIONS = {
 
 from services.bot_service import bot_service
 
-async def run_yt_dlp(url, download=False):
-    """Run yt-dlp binary with options"""
+async def run_yt_dlp(url):
+    """Run yt-dlp binary with options for streaming"""
     # Path to yt-dlp binary (assumed to be in the project root or accessible)
     # We try to locate it relative to the project root
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -57,16 +57,8 @@ async def run_yt_dlp(url, download=False):
     else:
         logger.info("Cookies file not found. Using visitor/guest mode.")
 
-    if not download:
-        # Streaming: we want JSON, no download. Default is simulate.
-        cmd.append('--dump-single-json')
-    else:
-        # Downloading: we want JSON and download.
-        cmd.append('--dump-single-json')
-        cmd.append('--no-simulate')
-        cmd.extend(['-o', '%(extractor)s-%(id)s-%(title)s.%(ext)s'])
-        cmd.append('--restrict-filenames')
-
+    # Streaming mode: get JSON metadata without downloading
+    cmd.append('--dump-single-json')
     cmd.extend(['-f', 'bestaudio/best'])
     cmd.append(url)
     
@@ -103,28 +95,21 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.url = data.get('url')
 
     @classmethod
-    async def from_url(cls, url, *, loop=None, stream=False):
+    async def from_url(cls, url, *, loop=None):
         loop = loop or asyncio.get_event_loop()
         
         try:
-             data = await run_yt_dlp(url, download=not stream)
+            data = await run_yt_dlp(url)
         except Exception as e:
-            logger.error(f"yt-dlp download error: {e}")
+            logger.error(f"yt-dlp streaming error: {e}")
             raise e
 
         if 'entries' in data:
             # take first item from a playlist
             data = data['entries'][0]
 
-        if stream:
-            filename = data['url']
-        else:
-            filename = data.get('filename') or data.get('_filename')
-            if not filename:
-                 logger.warning("Could not find 'filename' in yt-dlp output, falling back to 'url' or raw extraction")
-                 filename = data.get('url')
-
-        return cls(discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data)
+        stream_url = data['url']
+        return cls(discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS), data=data)
 
 
 class MusicService:
@@ -182,7 +167,7 @@ class MusicService:
 
         async with ctx.typing():
             try:
-                player = await YTDLSource.from_url(url, loop=ctx.bot.loop, stream=True)
+                player = await YTDLSource.from_url(url, loop=ctx.bot.loop)
                 ctx.voice_client.play(
                     player, 
                     after=lambda e: self._play_next_callback(guild_id, e, ctx.bot.loop)

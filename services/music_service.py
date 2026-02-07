@@ -40,6 +40,10 @@ async def run_yt_dlp(url, download=False):
     cmd.extend(['--source-address', '0.0.0.0'])
     cmd.extend(['--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'])
     
+    # Fix for n-token challenges
+    cmd.extend(['--js-runtimes', 'node'])
+    cmd.extend(['--remote-components', 'ejs:github'])
+    
     # Cookies
     cookies_file = '/app/data/cookies.txt'
     local_cookies = os.path.join(base_dir, 'cookies.txt')

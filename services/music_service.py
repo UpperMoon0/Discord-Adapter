@@ -5,27 +5,11 @@ from collections import deque
 from typing import Dict, Optional
 import discord
 from discord.ext import commands
-import yt_dlp
+import json
+import subprocess
+import sys
 
 logger = logging.getLogger("lily-discord-adapter")
-
-# yt-dlp format options
-YTDL_FORMAT_OPTIONS = {
-    'format': 'bestaudio/best',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'noplaylist': True,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
-    'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    },
-}
 
 # FFmpeg options
 FFMPEG_OPTIONS = {
@@ -35,22 +19,76 @@ FFMPEG_OPTIONS = {
 
 from services.bot_service import bot_service
 
-def get_ytdl():
-    """Create a yt-dlp instance with current cookies configuration"""
-    # Cookies file managed by CookiesService
+async def run_yt_dlp(url, download=False):
+    """Run yt-dlp binary with options"""
+    # Path to yt-dlp binary (assumed to be in the project root or accessible)
+    # We try to locate it relative to the project root
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    binary_path = os.path.join(base_dir, 'yt-dlp')
+    
+    if not os.path.exists(binary_path):
+        binary_path = 'yt-dlp'
+        
+    cmd = [sys.executable, binary_path]
+    
+    # Common options
+    cmd.append('--no-playlist')
+    cmd.append('--no-check-certificate')
+    cmd.append('--quiet')
+    cmd.append('--no-warnings')
+    cmd.extend(['--default-search', 'auto'])
+    cmd.extend(['--source-address', '0.0.0.0'])
+    cmd.extend(['--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'])
+    
+    # Cookies
     cookies_file = '/app/data/cookies.txt'
-    
-    opts = YTDL_FORMAT_OPTIONS.copy()
-    
-    if bot_service.get_guest_mode():
-        logger.info("Guest mode forced. Ignoring cookies file.")
-    elif os.path.exists(cookies_file):
-        opts['cookiefile'] = cookies_file
+    local_cookies = os.path.join(base_dir, 'cookies.txt')
+
+    if os.path.exists(cookies_file):
+        cmd.extend(['--cookies', cookies_file])
         logger.info(f"Using cookies from {cookies_file}")
+    elif os.path.exists(local_cookies):
+         cmd.extend(['--cookies', local_cookies])
+         logger.info(f"Using cookies from local file: {local_cookies}")
     else:
         logger.info("Cookies file not found. Using visitor/guest mode.")
+
+    if not download:
+        # Streaming: we want JSON, no download. Default is simulate.
+        cmd.append('--dump-single-json')
+    else:
+        # Downloading: we want JSON and download.
+        cmd.append('--dump-single-json')
+        cmd.append('--no-simulate')
+        cmd.extend(['-o', '%(extractor)s-%(id)s-%(title)s.%(ext)s'])
+        cmd.append('--restrict-filenames')
+
+    cmd.extend(['-f', 'bestaudio/best'])
+    cmd.append(url)
     
-    return yt_dlp.YoutubeDL(opts)
+    # logger.info(f"Running command: {' '.join(cmd)}")
+
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+
+    stdout, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        error_msg = stderr.decode().strip()
+        logger.error(f"yt-dlp error: {error_msg}")
+        raise Exception(f"yt-dlp failed: {error_msg}")
+
+    output = stdout.decode().strip()
+    
+    try:
+        data = json.loads(output)
+        return data
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse yt-dlp output: {output}")
+        raise e
 
 
 class YTDLSource(discord.PCMVolumeTransformer):
@@ -64,12 +102,9 @@ class YTDLSource(discord.PCMVolumeTransformer):
     async def from_url(cls, url, *, loop=None, stream=False):
         loop = loop or asyncio.get_event_loop()
         
-        # Create fresh instance to pick up any new cookies
-        ytdl = get_ytdl()
-        
         try:
-             data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
-        except yt_dlp.utils.DownloadError as e:
+             data = await run_yt_dlp(url, download=not stream)
+        except Exception as e:
             logger.error(f"yt-dlp download error: {e}")
             raise e
 
@@ -77,7 +112,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
             # take first item from a playlist
             data = data['entries'][0]
 
-        filename = data['url'] if stream else ytdl.prepare_filename(data)
+        if stream:
+            filename = data['url']
+        else:
+            filename = data.get('filename') or data.get('_filename')
+            if not filename:
+                 logger.warning("Could not find 'filename' in yt-dlp output, falling back to 'url' or raw extraction")
+                 filename = data.get('url')
+
         return cls(discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data)
 
 

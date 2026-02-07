@@ -30,6 +30,9 @@ COPY . /app/Lily-Discord-Adapter
 # Set working directory to the application directory
 WORKDIR /app/Lily-Discord-Adapter
 
+# Make yt-dlp binary executable
+RUN chmod +x /app/Lily-Discord-Adapter/yt-dlp
+
 # Add current directory to Python path
 ENV PYTHONPATH=/app/Lily-Discord-Adapter
 

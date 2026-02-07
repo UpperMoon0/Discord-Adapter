@@ -5,7 +5,6 @@ Handles Discord bot control APIs
 
 import logging
 from fastapi import APIRouter
-from pydantic import BaseModel
 from services.bot_service import bot_service
 
 logger = logging.getLogger("lily-discord-adapter")

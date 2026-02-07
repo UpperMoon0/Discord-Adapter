@@ -14,6 +14,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsodium-dev \
+    nodejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

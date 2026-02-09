@@ -182,15 +182,6 @@ class ServiceDiscovery:
         if services:
             svc = services[0]
             
-            # Check for hostname tag
-            for tag in svc.get('tags', []):
-                if tag.startswith('hostname='):
-                    hostname = tag.split('=', 1)[1]
-                    if protocol == 'ws':
-                        return f"wss://{hostname}/ws"
-                    else:
-                        return f"https://{hostname}/api"
-
             # Fallback to direct IP:Port
             # For HTTP, we might want /api if it's lily-core?
             # The previous logic allowed protocol="http" -> http://ip:port.

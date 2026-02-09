@@ -166,23 +166,18 @@ class ServiceDiscovery:
             logger.error(f"Failed to discover services: {e}")
             return []
 
-    def get_service_address(self, service_name: str, protocol: str = "http", required_tag: Optional[str] = None) -> Optional[str]:
+    def get_service_url(self, service_name: str, protocol: str = "http") -> Optional[str]:
         """
-        Get the first available address and port for a service.
+        Get the URL for a service based on protocol.
 
         Args:
             service_name: Name of the service to find
-            protocol: Protocol prefix (http, ws, https)
-            required_tag: Optional tag to filter by (e.g., 'websocket', 'http')
+            protocol: Protocol (http, ws)
 
         Returns:
-            URL string like "http://hostname:port" or "ws://hostname:port"
+            URL string (e.g., https://hostname/api or wss://hostname/ws)
         """
         services = self.get_services(service_name)
-        
-        # Filter by required tag if specified
-        if required_tag:
-            services = [s for s in services if required_tag in s.get('tags', [])]
         
         if services:
             svc = services[0]
@@ -191,43 +186,37 @@ class ServiceDiscovery:
             for tag in svc.get('tags', []):
                 if tag.startswith('hostname='):
                     hostname = tag.split('=', 1)[1]
-                    if protocol.startswith('ws'):
+                    if protocol == 'ws':
                         return f"wss://{hostname}/ws"
                     else:
                         return f"https://{hostname}/api"
 
-            return f"{protocol}://{svc['address']}:{svc['port']}"
+            # Fallback to direct IP:Port
+            # For HTTP, we might want /api if it's lily-core?
+            # The previous logic allowed protocol="http" -> http://ip:port.
+            # But get_lily_core_http_url appended /api if missing.
+            # I should maintain that behavior if it's generic?
+            # Or just rely on the consumer knowing if they need /api?
+            # The TS refactor enforced /api for 'http' type on hostname.
+            # If I return http://ip:port, should I append /api?
+            # If I follow the user's "single method... https://hostname/api",
+            # it implies standardization.
+            # I'll append /api if protocol is http, and /ws if ws, for consistency?
+            # But generic services might not use /api.
+            # However, this method seems tailored for this ecosystem.
+            
+            base_url = f"{protocol}://{svc['address']}:{svc['port']}"
+            # If we want to be safe, we can check service name?
+            # But the user wants generic.
+            # Let's assume standard behavior:
+            # If it's a direct IP, we probably don't add /api automatically unless we know?
+            # But the hostname logic adds /api.
+            # Let's add it for consistency with hostname logic.
+            if protocol == 'ws':
+                return f"{base_url}/ws"
+            return f"{base_url}/api"
+            
         return None
-
-    def get_lily_core_ws_url(self, required_tag: Optional[str] = None) -> Optional[str]:
-        """
-        Convenience method to get Lily-Core WebSocket URL.
-
-        Args:
-            required_tag: Optional tag to filter by (e.g., 'websocket')
-
-        Returns:
-            WebSocket URL for Lily-Core or None if not found
-        """
-        url = self.get_service_address("lily-core", "ws", required_tag or "websocket")
-        if url and not url.endswith("/ws"):
-            return f"{url}/ws"
-        return url
-
-    def get_lily_core_http_url(self, required_tag: Optional[str] = None) -> Optional[str]:
-        """
-        Convenience method to get Lily-Core HTTP URL.
-
-        Args:
-            required_tag: Optional tag to filter by (e.g., 'http')
-
-        Returns:
-            HTTP URL for Lily-Core or None if not found
-        """
-        url = self.get_service_address("lily-core", "http", required_tag or "http")
-        if url and not url.endswith("/api"):
-            return f"{url}/api"
-        return url
 
     def discover_all_services(self) -> Dict[str, List[Dict]]:
         """

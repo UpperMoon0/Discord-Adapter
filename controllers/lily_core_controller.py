@@ -36,7 +36,7 @@ class LilyCoreController:
         """
         try:
             data = json.loads(message)
-            logger.info(f"Received from Lily-Core: {data}")
+            logger.info(f"Received from lily-core: {data}")
             
             # Extract relevant information
             response_type = data.get("type", "")
@@ -55,9 +55,9 @@ class LilyCoreController:
                 await self._handle_session_expired(user_id)
                 
         except json.JSONDecodeError:
-            logger.error(f"Invalid JSON from Lily-Core: {message}")
+            logger.error(f"Invalid JSON from lily-core: {message}")
         except Exception as e:
-            logger.error(f"Error handling Lily-Core message: {e}")
+            logger.error(f"Error handling lily-core message: {e}")
     
     async def _handle_response(self, user_id: str, text: str):
         """Handle regular chat response"""

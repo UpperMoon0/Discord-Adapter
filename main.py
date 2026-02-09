@@ -61,13 +61,9 @@ BOT = None
 
 
 def get_lily_core_http_url():
-    """Get Lily-Core HTTP URL from Consul.
-    
-    Returns None if Consul is unavailable or Lily-Core is not registered.
-    Consul is the single source of truth - no fallback to environment variables.
-    """
+    """Get Lily-Core HTTP URL from Consul."""
     if sd:
-        return sd.get_lily_core_http_url()
+        return sd.get_service_url("lily-core", "http")
     return None
 
 
@@ -91,7 +87,7 @@ async def process_message_task(message_data: dict):
         # Send Lily's response back to Discord
         await channel.send(f"{response_text}")
     else:
-        logger.error(f"Failed to get response from Lily-Core for user {user_id}")
+        logger.error(f"Failed to get response from lily-core for user {user_id}")
         await channel.send("I'm having trouble connecting to my brain right now. Please try again later.")
 
 
@@ -134,10 +130,10 @@ async def initialize_services():
     http_url = await lily_core_service.get_http_url()
     if http_url:
         lily_core_available = True
-        logger.info(f"Lily-Core HTTP URL: {http_url}")
+        logger.info(f"lily-core HTTP URL: {http_url}")
     else:
         lily_core_available = False
-        logger.warning("Lily-Core not found in Consul. Chat features will be disabled.")
+        logger.warning("lily-core not found in Consul. Chat features will be disabled.")
     
     # Update controller status
     bot_service.set_lily_core_status(lily_core_available)
@@ -150,7 +146,7 @@ async def initialize_services():
     
     # Log concurrency configuration
     logger.info(f"Concurrency config: max_concurrent={max_concurrent}, queue_size={queue_size}, workers=4")
-    logger.info(f"Lily-Core available: {lily_core_available}")
+    logger.info(f"lily-core available: {lily_core_available}")
 
 
 def create_discord_bot():
@@ -276,7 +272,7 @@ def run_health_server():
 async def monitor_lily_core():
     """Background task to monitor Lily-Core availability"""
     global lily_core_available
-    logger.info("Starting Lily-Core monitor task")
+    logger.info("Starting lily-core monitor task")
     while True:
         try:
             if lily_core_service:
@@ -290,9 +286,9 @@ async def monitor_lily_core():
                     
                     if is_available:
                         http_url = await lily_core_service.get_http_url()
-                        logger.info(f"Lily-Core discovered/connected at: {http_url}")
+                        logger.info(f"lily-core discovered/connected at: {http_url}")
                     else:
-                        logger.warning("Lily-Core lost connection or not found.")
+                        logger.warning("lily-core lost connection or not found.")
                         
         except Exception as e:
             logger.error(f"Error in monitor_lily_core: {e}")

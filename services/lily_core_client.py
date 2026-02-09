@@ -46,7 +46,7 @@ class LilyCoreClient:
         http_url = await self.get_base_url()
         
         if not http_url:
-            logger.error("Lily-Core HTTP URL not found")
+            logger.error("lily-core HTTP URL not found")
             return None
         
         payload = {
@@ -55,7 +55,7 @@ class LilyCoreClient:
             "username": username
         }
         
-        logger.info(f"Sending chat request to Lily-Core: {payload}")
+        logger.info(f"Sending chat request to lily-core: {payload}")
         
         try:
             response = await self.http_client.post(
@@ -66,7 +66,7 @@ class LilyCoreClient:
             
             if response.status_code == 200:
                 data = response.json()
-                logger.info(f"Received response from Lily-Core: {data}")
+                logger.info(f"Received response from lily-core: {data}")
                 return data
             else:
                 logger.error(

@@ -90,9 +90,6 @@ async def process_message_task(message_data: dict):
     if response_text:
         # Send Lily's response back to Discord
         await channel.send(f"{response_text}")
-        
-        # Add assistant response to history
-        session_service.add_to_history(user_id, "assistant", response_text)
     else:
         logger.error(f"Failed to get response from Lily-Core for user {user_id}")
         await channel.send("I'm having trouble connecting to my brain right now. Please try again later.")

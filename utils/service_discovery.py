@@ -39,6 +39,13 @@ class ServiceDiscovery:
         # Create a unique ID if not provided
         self.service_id = service_id or f"{service_name}-{self.hostname}-{uuid.uuid4().hex[:8]}"
         self.tags = tags or []
+        
+        # Add public URL tag if DOMAIN_NAME is set
+        domain_name = os.getenv("DOMAIN_NAME")
+        if domain_name:
+            # Construct public URL: https://{service_name}.{domain_name}
+            public_url = f"https://{service_name}.{domain_name}"
+            self.tags.append(f"url={public_url}")
 
         # Registration thread control
         self._stop_event = threading.Event()

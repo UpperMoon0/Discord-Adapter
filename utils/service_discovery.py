@@ -43,9 +43,9 @@ class ServiceDiscovery:
         # Add public URL tag if DOMAIN_NAME is set
         domain_name = os.getenv("DOMAIN_NAME")
         if domain_name:
-            # Construct public URL: https://{service_name}.{domain_name}
-            public_url = f"https://{service_name}.{domain_name}"
-            self.tags.append(f"url={public_url}")
+            # Construct hostname: {service_name}.{domain_name}
+            hostname = f"{service_name}.{domain_name}"
+            self.tags.append(f"hostname={hostname}")
 
         # Registration thread control
         self._stop_event = threading.Event()
@@ -186,6 +186,16 @@ class ServiceDiscovery:
         
         if services:
             svc = services[0]
+            
+            # Check for hostname tag
+            for tag in svc.get('tags', []):
+                if tag.startswith('hostname='):
+                    hostname = tag.split('=', 1)[1]
+                    if protocol.startswith('ws'):
+                        return f"wss://{hostname}/ws"
+                    else:
+                        return f"https://{hostname}/api"
+
             return f"{protocol}://{svc['address']}:{svc['port']}"
         return None
 
@@ -199,10 +209,10 @@ class ServiceDiscovery:
         Returns:
             WebSocket URL for Lily-Core or None if not found
         """
-        base_url = self.get_service_address("lily-core", "ws", required_tag or "websocket")
-        if base_url:
-            return f"{base_url}/ws"
-        return None
+        url = self.get_service_address("lily-core", "ws", required_tag or "websocket")
+        if url and not url.endswith("/ws"):
+            return f"{url}/ws"
+        return url
 
     def get_lily_core_http_url(self, required_tag: Optional[str] = None) -> Optional[str]:
         """
@@ -214,10 +224,10 @@ class ServiceDiscovery:
         Returns:
             HTTP URL for Lily-Core or None if not found
         """
-        base_url = self.get_service_address("lily-core", "http", required_tag or "http")
-        if base_url:
-            return f"{base_url}/api"
-        return None
+        url = self.get_service_address("lily-core", "http", required_tag or "http")
+        if url and not url.endswith("/api"):
+            return f"{url}/api"
+        return url
 
     def discover_all_services(self) -> Dict[str, List[Dict]]:
         """

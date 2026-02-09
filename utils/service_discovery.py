@@ -199,7 +199,10 @@ class ServiceDiscovery:
         Returns:
             WebSocket URL for Lily-Core or None if not found
         """
-        return self.get_service_address("lily-core", "ws", required_tag or "websocket")
+        base_url = self.get_service_address("lily-core", "ws", required_tag or "websocket")
+        if base_url:
+            return f"{base_url}/ws"
+        return None
 
     def get_lily_core_http_url(self, required_tag: Optional[str] = None) -> Optional[str]:
         """
@@ -211,7 +214,10 @@ class ServiceDiscovery:
         Returns:
             HTTP URL for Lily-Core or None if not found
         """
-        return self.get_service_address("lily-core", "http", required_tag or "http")
+        base_url = self.get_service_address("lily-core", "http", required_tag or "http")
+        if base_url:
+            return f"{base_url}/api"
+        return None
 
     def discover_all_services(self) -> Dict[str, List[Dict]]:
         """

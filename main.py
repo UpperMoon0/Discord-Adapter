@@ -282,13 +282,17 @@ async def monitor_lily_core():
                 # Update status if changed
                 if is_available != lily_core_available:
                     lily_core_available = is_available
-                    bot_service.set_lily_core_status(is_available)
                     
-                    if is_available:
-                        http_url = await lily_core_service.get_http_url()
-                        logger.info(f"lily-core discovered/connected at: {http_url}")
+                    http_url = None
+                    ws_url = None
+                    if is_available and sd:
+                        http_url = sd.get_service_url("lily-core", "http")
+                        ws_url = sd.get_service_url("lily-core", "ws")
+                        logger.info(f"lily-core discovered/connected at: {http_url} (WS: {ws_url})")
                     else:
                         logger.warning("lily-core lost connection or not found.")
+                        
+                    bot_service.set_lily_core_status(is_available, http_url, ws_url)
                         
         except Exception as e:
             logger.error(f"Error in monitor_lily_core: {e}")

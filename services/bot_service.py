@@ -19,6 +19,8 @@ class BotService:
         self.bot_startup_attempted = False
         self.bot_loop = None  # Store reference to bot's event loop
         self.lily_core_available = False
+        self.lily_core_http_url = None
+        self.lily_core_ws_url = None
     
     def set_bot_references(self, bot, enabled, startup_attempted, loop=None):
         """Set global references to the bot and its state"""
@@ -27,9 +29,11 @@ class BotService:
         self.bot_startup_attempted = startup_attempted
         self.bot_loop = loop
     
-    def set_lily_core_status(self, available: bool):
-        """Set Lily-Core availability status"""
+    def set_lily_core_status(self, available: bool, http_url: Optional[str] = None, ws_url: Optional[str] = None):
+        """Set Lily-Core availability status and URLs"""
         self.lily_core_available = available
+        self.lily_core_http_url = http_url
+        self.lily_core_ws_url = ws_url
         
     async def enable_bot(self) -> dict:
         """Enable the Discord bot"""
@@ -83,7 +87,9 @@ class BotService:
             "bot_ready": self.bot.is_ready() if self.bot else False,
             "bot_startup_attempted": self.bot_startup_attempted,
             "discord_configured": bool(bot_token),
-            "lily_core_available": self.lily_core_available
+            "lily_core_available": self.lily_core_available,
+            "lily_core_http_url": self.lily_core_http_url,
+            "lily_core_ws_url": self.lily_core_ws_url
         }
     
     def get_health_info(self, concurrency_manager) -> dict:

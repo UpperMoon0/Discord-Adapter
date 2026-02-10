@@ -128,15 +128,20 @@ async def initialize_services():
     
     # Check if Lily-Core is available
     http_url = await lily_core_service.get_http_url()
+    ws_url = None
     if http_url:
         lily_core_available = True
         logger.info(f"lily-core HTTP URL: {http_url}")
+        # Fetch WS URL as well
+        if sd:
+            ws_url = sd.get_service_url("lily-core", "ws")
+            logger.info(f"lily-core WS URL: {ws_url}")
     else:
         lily_core_available = False
         logger.warning("lily-core not found in Consul. Chat features will be disabled.")
     
     # Update controller status
-    bot_service.set_lily_core_status(lily_core_available)
+    bot_service.set_lily_core_status(lily_core_available, http_url, ws_url)
 
     # Initialize session service
     session_service = SessionService()

@@ -190,9 +190,15 @@ class ServiceDiscovery:
                     break
             
             if hostname:
+                # Always use HTTPS/WSS for secure communication
+                if protocol == 'http':
+                    protocol = 'https'
+                elif protocol == 'ws':
+                    protocol = 'wss'
+                
                 base_url = f"{protocol}://{hostname}"
 
-                if protocol == 'ws':
+                if protocol == 'wss':
                     return f"{base_url}/ws"
                 return f"{base_url}/api"
             

@@ -181,31 +181,20 @@ class ServiceDiscovery:
         
         if services:
             svc = services[0]
+            hostname = None
             
-            # Fallback to direct IP:Port
-            # For HTTP, we might want /api if it's lily-core?
-            # The previous logic allowed protocol="http" -> http://ip:port.
-            # But get_lily_core_http_url appended /api if missing.
-            # I should maintain that behavior if it's generic?
-            # Or just rely on the consumer knowing if they need /api?
-            # The TS refactor enforced /api for 'http' type on hostname.
-            # If I return http://ip:port, should I append /api?
-            # If I follow the user's "single method... https://hostname/api",
-            # it implies standardization.
-            # I'll append /api if protocol is http, and /ws if ws, for consistency?
-            # But generic services might not use /api.
-            # However, this method seems tailored for this ecosystem.
+            # Extract hostname from tags
+            for tag in svc.get('tags', []):
+                if tag.startswith('hostname='):
+                    hostname = tag.split('=', 1)[1]
+                    break
             
-            base_url = f"{protocol}://{svc['address']}:{svc['port']}"
-            # If we want to be safe, we can check service name?
-            # But the user wants generic.
-            # Let's assume standard behavior:
-            # If it's a direct IP, we probably don't add /api automatically unless we know?
-            # But the hostname logic adds /api.
-            # Let's add it for consistency with hostname logic.
-            if protocol == 'ws':
-                return f"{base_url}/ws"
-            return f"{base_url}/api"
+            if hostname:
+                base_url = f"{protocol}://{hostname}"
+
+                if protocol == 'ws':
+                    return f"{base_url}/ws"
+                return f"{base_url}/api"
             
         return None
 

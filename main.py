@@ -31,6 +31,7 @@ from controllers.message_controller import MessageController
 from controllers.command_controller import CommandController
 from controllers.bot_controller import bot_router
 from controllers.cookies_controller import cookies_router, ws_cookies_router
+from utils.message_utils import send_message
 
 # Configure logging
 logging.basicConfig(
@@ -85,7 +86,7 @@ async def process_message_task(message_data: dict):
     
     if response_text:
         # Send Lily's response back to Discord
-        await channel.send(f"{response_text}")
+        await send_message(channel, response_text)
     else:
         logger.error(f"Failed to get response from lily-core for user {user_id}")
         await channel.send("I'm having trouble connecting to my brain right now. Please try again later.")

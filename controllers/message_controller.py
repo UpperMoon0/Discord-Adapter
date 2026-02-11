@@ -13,6 +13,7 @@ from discord.ext import commands
 from services.session_service import SessionService
 from services.lily_core_service import LilyCoreService
 from services.concurrency_manager import ConcurrencyManager, UserRateLimiter
+from utils.message_utils import send_message
 
 logger = logging.getLogger("lily-discord-adapter")
 
@@ -126,7 +127,7 @@ class MessageController:
             # Send prompt to Lily-Core as a regular chat message
             response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
             if response_text:
-                await channel.send(f"{response_text}")
+                await send_message(channel, response_text)
         
         logger.info(f"User {username} woke up Lily")
     
@@ -152,7 +153,7 @@ class MessageController:
                  # Send prompt to Lily-Core as a regular chat message
                  response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
                  if response_text:
-                     await channel.send(f"{response_text}")
+                     await send_message(channel, response_text)
             
             # End the session
             self.session_service.end_session(user_id)
@@ -175,7 +176,7 @@ class MessageController:
                  # Send prompt to Lily-Core as a regular chat message
                  response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
                  if response_text:
-                     await channel.send(f"{response_text}")
+                     await send_message(channel, response_text)
     
     async def _handle_chat_message(self, user_id: str, username: str, content: str, channel, message: discord.Message):
         """Handle regular chat message"""
@@ -209,7 +210,7 @@ class MessageController:
             # Direct processing without queue
             response_text = await self.lily_core_service.send_chat_message(user_id, username, content, attachments)
             if response_text:
-                await channel.send(f"{response_text}")
+                await send_message(channel, response_text)
         
         logger.info(f"User {username} ({user_id}): {content}")
     

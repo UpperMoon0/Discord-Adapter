@@ -200,20 +200,11 @@ def create_discord_bot():
 
 # Health check endpoint for Docker
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 app = FastAPI(
     title="Lily-Discord-Adapter Health",
     description="Health check endpoint for the Discord adapter"
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
 )
 
 # Include bot control router

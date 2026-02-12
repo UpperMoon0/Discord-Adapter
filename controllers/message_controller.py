@@ -71,7 +71,7 @@ class MessageController:
         if self.user_rate_limiter:
             if not await self.user_rate_limiter.acquire(user_id):
                 logger.warning(f"Rate limit exceeded for user {username}")
-                await channel.send("**Lily:** You're sending messages too fast! Please slow down.")
+                await channel.send("You're sending messages too fast! Please slow down.")
                 return
         
         # Check if this is a wake-up phrase
@@ -81,102 +81,77 @@ class MessageController:
         
         # Check if this is a goodbye phrase
         if self.session_service.is_goodbye_phrase(content):
-            await self._handle_goodbye_phrase(user_id, username, channel)
+            await self._handle_goodbye_phrase(user_id, username, content, channel)
             return
         
         # Only process messages if user has an active session
         if not self.session_service.is_session_active(user_id):
             # User is not in an active session
             if content.lower().startswith("hey"):
-                await channel.send("**Lily:** Hi! Say **'Hey Lily'** to wake me up and start a conversation.")
+                await channel.send("Hi! Say **'Hey Lily'** to wake me up and start a conversation.")
             return
         
         # Process regular message in active session
         await self._handle_chat_message(user_id, username, content, channel, message)
     
     async def _handle_wake_phrase(self, user_id: str, username: str, content: str, channel, message: discord.Message):
-        """Handle wake-up phrase"""
+        """Handle wake-up phrase - create session and send user's message to Lily-Core"""
         # Create session
         self.session_service.create_session(user_id, username, channel)
         
-        # Extract message after wake phrase
+        # Extract message after wake phrase - treat as regular message
         actual_message = self.session_service.extract_message_after_wake(content)
         
-        # Generate session start prompt (Discord-specific logic in Discord Adapter)
-        prompt = self.session_service.get_session_start_prompt(username)
-        
-        # If user provided additional message, include it
-        if actual_message:
-            prompt = f"{prompt}\n\nUser's message: {actual_message}"
-        
-        # If concurrency manager is available, use it for message processing
+        # Send the actual message to Lily-Core (empty if just wake phrase)
         if self.concurrency_manager:
-            # We treat the wake phrase + prompt as a submitted message
             message_data = {
                 "user_id": user_id,
                 "username": username,
-                "text": prompt, # This is key: we send the prompt as the user's "message" to Lily-Core
+                "text": actual_message,
                 "channel": channel,
                 "attachments": []
             }
             success = await self.concurrency_manager.submit_message(message_data)
             if not success:
-                await channel.send("**Lily:** Message queue is full. Please try again.")
+                await channel.send("Message queue is full. Please try again.")
                 logger.warning(f"Wake message dropped for user {username} due to queue overflow")
         else:
-            # Send prompt to Lily-Core as a regular chat message
-            response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
+            # Send to Lily-Core as regular chat message
+            response_text = await self.lily_core_service.send_chat_message(user_id, username, actual_message)
             if response_text:
-                await send_message(channel, response_text)
+                await send_message(channel, response_text, prefix="")
         
         logger.info(f"User {username} woke up Lily")
     
-    async def _handle_goodbye_phrase(self, user_id: str, username: str, channel):
-        """Handle goodbye phrase"""
+    async def _handle_goodbye_phrase(self, user_id: str, username: str, content: str, channel):
+        """Handle goodbye phrase - end session and send goodbye to Lily-Core"""
+        # Check if user has an active session
         if self.session_service.is_session_active(user_id):
-            # Generate session end prompt (Discord-specific logic)
-            prompt = self.session_service.get_session_end_prompt(username)
+            # End the session first
+            self.session_service.end_session(user_id)
             
-            # If concurrency manager is available, use it
+            # Send goodbye to Lily-Core like a regular message
             if self.concurrency_manager:
-                 message_data = {
+                message_data = {
                     "user_id": user_id,
                     "username": username,
-                    "text": prompt,
+                    "text": content,
                     "channel": channel,
                     "attachments": []
                 }
-                 success = await self.concurrency_manager.submit_message(message_data)
-                 if not success:
-                     await self.lily_core_service.send_chat_message(user_id, username, prompt)
+                success = await self.concurrency_manager.submit_message(message_data)
+                if not success:
+                    logger.warning(f"Goodbye message dropped for user {username} due to queue overflow")
             else:
-                 # Send prompt to Lily-Core as a regular chat message
-                 response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
-                 if response_text:
-                     await send_message(channel, response_text)
+                # Send to Lily-Core as regular chat message
+                response_text = await self.lily_core_service.send_chat_message(user_id, username, content)
+                if response_text:
+                    await send_message(channel, response_text, prefix="")
             
-            # End the session
-            self.session_service.end_session(user_id)
             logger.info(f"User {username} said goodbye to Lily")
         else:
-            # User is not in an active session - generate no-active prompt
-            prompt = self.session_service.get_session_no_active_prompt()
-            
-            # Use concurrency manager if available
-            if self.concurrency_manager:
-                 message_data = {
-                    "user_id": user_id,
-                    "username": username,
-                    "text": prompt,
-                    "channel": channel,
-                    "attachments": []
-                }
-                 await self.concurrency_manager.submit_message(message_data)
-            else:
-                 # Send prompt to Lily-Core as a regular chat message
-                 response_text = await self.lily_core_service.send_chat_message(user_id, username, prompt)
-                 if response_text:
-                     await send_message(channel, response_text)
+            # User is not in an active session - no response needed
+            logger.info(f"User {username} said goodbye but had no active session")
     
     async def _handle_chat_message(self, user_id: str, username: str, content: str, channel, message: discord.Message):
         """Handle regular chat message"""
@@ -204,13 +179,13 @@ class MessageController:
             }
             success = await self.concurrency_manager.submit_message(message_data)
             if not success:
-                await channel.send("**Lily:** Message queue is full. Please try again.")
+                await channel.send("Message queue is full. Please try again.")
                 logger.warning(f"Message dropped for user {username} due to queue overflow")
         else:
             # Direct processing without queue
             response_text = await self.lily_core_service.send_chat_message(user_id, username, content, attachments)
             if response_text:
-                await send_message(channel, response_text)
+                await send_message(channel, response_text, prefix="")
         
         logger.info(f"User {username} ({user_id}): {content}")
     

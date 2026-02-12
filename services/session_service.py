@@ -74,25 +74,6 @@ class SessionService:
         
         # Statistics
         self._total_sessions = 0
-        
-        # Session lifecycle prompts (Discord-specific)
-        self._session_start_prompt = (
-            "The user {username} just said 'Hey Lily' to wake you up. "
-            "Respond with a friendly greeting. Keep it brief and conversational. "
-            "No markdown formatting."
-        )
-        
-        self._session_end_prompt = (
-            "The user {username} said 'Goodbye Lily'. "
-            "Respond with a friendly farewell. Keep it brief and conversational. "
-            "No markdown formatting."
-        )
-        
-        self._session_no_active_prompt = (
-            "The user said 'Goodbye Lily' but there was no active conversation. "
-            "Respond with a gentle message indicating we weren't chatting. "
-            "Keep it brief and friendly. No markdown formatting."
-        )
     
     def get_session(self, user_id: str) -> Optional[UserSession]:
         """Get session for a user"""
@@ -140,12 +121,3 @@ class SessionService:
         if len(words) > 1:
             return words[1].strip()
         return ""
-    
-    def get_session_start_prompt(self, username: str) -> str:
-        return self._session_start_prompt.format(username=username)
-    
-    def get_session_end_prompt(self, username: str) -> str:
-        return self._session_end_prompt.format(username=username)
-    
-    def get_session_no_active_prompt(self) -> str:
-        return self._session_no_active_prompt

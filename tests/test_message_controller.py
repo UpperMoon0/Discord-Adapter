@@ -70,7 +70,6 @@ async def test_wake_phrase():
     # Mock session service
     session_service.is_wake_phrase.return_value = True
     session_service.extract_message_after_wake.return_value = "Hello"
-    session_service.get_session_start_prompt.return_value = "Session Start"
     
     message = MagicMock()
     message.author.id = "123"
@@ -86,10 +85,9 @@ async def test_wake_phrase():
     # Verify session created
     session_service.create_session.assert_called_once()
     
-    # Verify message sent (prompt + content)
-    expected_prompt = "Session Start\n\nUser's message: Hello"
+    # Verify message sent (just the extracted content, no prompt)
     lily_core_service.send_chat_message.assert_called_once_with(
-        "123", "TestUser", expected_prompt
+        "123", "TestUser", "Hello"
     )
     
     # Verify channel.send was called with the response
@@ -111,7 +109,6 @@ async def test_goodbye_phrase():
     session_service.is_wake_phrase.return_value = False
     session_service.is_goodbye_phrase.return_value = True
     session_service.is_session_active.return_value = True
-    session_service.get_session_end_prompt.return_value = "Goodbye Prompt"
     
     message = MagicMock()
     message.author.id = "123"
@@ -127,9 +124,9 @@ async def test_goodbye_phrase():
     # Verify session ended
     session_service.end_session.assert_called_once_with("123")
     
-    # Verify message sent
+    # Verify message sent (just the original content, no prompt)
     lily_core_service.send_chat_message.assert_called_once_with(
-        "123", "TestUser", "Goodbye Prompt"
+        "123", "TestUser", "Bye Lily"
     )
     
     # Verify channel.send was called

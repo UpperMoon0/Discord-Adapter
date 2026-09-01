@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from mcp_server import _transport_security
 from services.discord_admin_service import DiscordAdminService
 
 
@@ -29,6 +30,32 @@ def test_policy_requires_explicit_allowlist():
 
     with patch.dict(os.environ, {"DISCORD_ADMIN_GUILD_IDS": "*"}, clear=True):
         assert service.is_guild_allowed(999) is True
+
+
+def test_transport_security_derives_host_from_domain_name():
+    with patch.dict(os.environ, {"DOMAIN_NAME": "nstut.cloud"}, clear=True):
+        settings = _transport_security()
+
+    assert "localhost:*" in settings.allowed_hosts
+    assert "lily-discord-adapter.nstut.cloud" in settings.allowed_hosts
+    assert "lily-discord-adapter.nstut.cloud:*" in settings.allowed_hosts
+    assert settings.allowed_origins == []
+
+
+def test_transport_security_explicit_hosts_override_domain_default():
+    with patch.dict(
+        os.environ,
+        {
+            "DOMAIN_NAME": "nstut.cloud",
+            "MCP_ALLOWED_HOSTS": "mcp.example.com,mcp.example.com:*",
+            "MCP_ALLOWED_ORIGINS": "https://example.com",
+        },
+        clear=True,
+    ):
+        settings = _transport_security()
+
+    assert settings.allowed_hosts == ["mcp.example.com", "mcp.example.com:*"]
+    assert settings.allowed_origins == ["https://example.com"]
 
 
 @pytest.mark.asyncio

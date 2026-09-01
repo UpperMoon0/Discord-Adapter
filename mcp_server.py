@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 from typing import Annotated
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import Field
 from starlette.responses import JSONResponse
@@ -25,6 +26,45 @@ mcp_server = MCPServer(
         "Use a separate tool call for each guild when applying an action to multiple servers."
     ),
 )
+
+
+def _csv_env(name: str) -> list[str]:
+    """Read a comma-separated environment setting, dropping blank entries."""
+    return [value.strip() for value in os.getenv(name, "").split(",") if value.strip()]
+
+
+def _transport_security() -> TransportSecuritySettings:
+    """
+    Configure MCP's DNS-rebinding protection for both local/tunnel and hosted use.
+
+    The MCP SDK defaults to localhost-only Host validation. Lily's production
+    deployment already provides DOMAIN_NAME, so derive the public adapter host
+    from it unless MCP_ALLOWED_HOSTS is explicitly configured.
+    """
+    allowed_hosts = _csv_env("MCP_ALLOWED_HOSTS")
+    if not allowed_hosts:
+        allowed_hosts = [
+            "localhost",
+            "localhost:*",
+            "127.0.0.1",
+            "127.0.0.1:*",
+            "[::1]",
+            "[::1]:*",
+        ]
+
+        domain = os.getenv("DOMAIN_NAME", "").strip().strip(".")
+        if domain:
+            public_host = (
+                domain
+                if domain.startswith("lily-discord-adapter.")
+                else f"lily-discord-adapter.{domain}"
+            )
+            allowed_hosts.extend([public_host, f"{public_host}:*"])
+
+    return TransportSecuritySettings(
+        allowed_hosts=allowed_hosts,
+        allowed_origins=_csv_env("MCP_ALLOWED_ORIGINS"),
+    )
 
 
 @mcp_server.tool(
@@ -240,4 +280,5 @@ def build_mcp_asgi_app():
     return mcp_server.streamable_http_app(
         json_response=True,
         streamable_http_path="/",
+        transport_security=_transport_security(),
     )

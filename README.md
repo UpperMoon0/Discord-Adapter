@@ -14,6 +14,7 @@ Discord bot adapter for Lily-Core. The service connects Discord to Lily-Core and
 - Explicit per-guild MCP allowlist (fail closed by default)
 - Discord message, moderation, role, channel, and audit-log tools
 - Optional bearer protection for generic MCP clients
+- MCP Host/Origin allowlists for DNS-rebinding protection
 - Cross-event-loop dispatch so FastAPI/MCP requests execute Discord operations on the bot's owning event loop
 
 ## Setup
@@ -46,6 +47,11 @@ DISCORD_MEMBERS_INTENT=false
 # a private network, or an authenticating reverse proxy.
 MCP_BEARER_TOKEN=
 
+# Optional DNS-rebinding allowlists. If MCP_ALLOWED_HOSTS is empty, localhost
+# is allowed and lily-discord-adapter.<DOMAIN_NAME> is added automatically.
+MCP_ALLOWED_HOSTS=
+MCP_ALLOWED_ORIGINS=
+
 # Service Configuration
 PORT=8004
 
@@ -54,6 +60,8 @@ CONSUL_HTTP_ADDR=consul:8500
 ```
 
 `DISCORD_ADMIN_GUILD_IDS` is an adapter-level boundary in addition to Discord's own permissions and role hierarchy. If the variable is missing or empty, MCP tools cannot read or mutate any guild.
+
+The MCP SDK validates the HTTP `Host` header to prevent DNS rebinding. Lily's production deployment already supplies `DOMAIN_NAME`, so the adapter automatically allows `lily-discord-adapter.<DOMAIN_NAME>` plus localhost. For another hostname, set `MCP_ALLOWED_HOSTS` explicitly as a comma-separated list. `MCP_ALLOWED_ORIGINS` is normally unnecessary for server-to-server MCP clients and should only contain browser origins you intentionally support.
 
 ### Installation
 
@@ -72,6 +80,7 @@ docker run -d \
   -p 8004:8004 \
   -e DISCORD_BOT_TOKEN=your_token \
   -e DISCORD_ADMIN_GUILD_IDS=123456789012345678 \
+  -e DOMAIN_NAME=nstut.cloud \
   -e CONSUL_HTTP_ADDR=consul:8500 \
   nstut/lily-discord-adapter
 ```

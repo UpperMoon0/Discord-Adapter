@@ -129,7 +129,7 @@ async def discord_get_member(
 
 @mcp_server.tool(
     title="Read Discord messages",
-    description="Read recent messages from one text channel or thread in an allowed Discord server.",
+    description="Read recent messages from one text channel or thread, including jump URLs and reply/reference metadata.",
     annotations=READ_ONLY,
 )
 async def discord_read_messages(
@@ -165,15 +165,42 @@ async def discord_get_audit_log(
 
 @mcp_server.tool(
     title="Send Discord message",
-    description="Send one message as the Discord bot. Discord mentions are disabled to prevent accidental pings.",
+    description=(
+        "Send one Discord message, optionally pinging explicitly selected users/roles, replying to a message, "
+        "or quoting a message. Mentions are suppressed by default; @everyone/@here are never enabled."
+    ),
     annotations=WRITE,
 )
 async def discord_send_message(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     channel_id: Annotated[int, Field(description="Discord text channel ID")],
     content: Annotated[str, Field(min_length=1, max_length=2000)],
+    mention_user_ids: Annotated[
+        list[int] | None,
+        Field(description="Discord user IDs to prepend and ping; only these user mentions are allowed"),
+    ] = None,
+    mention_role_ids: Annotated[
+        list[int] | None,
+        Field(description="Discord role IDs to prepend and ping; only these role mentions are allowed"),
+    ] = None,
+    reply_to_message_id: Annotated[
+        int | None,
+        Field(description="Optional message ID in this channel to reply to without automatically pinging its author"),
+    ] = None,
+    quote_message_id: Annotated[
+        int | None,
+        Field(description="Optional message ID in this channel whose author/content should be quoted above the new content"),
+    ] = None,
 ) -> dict:
-    return await discord_admin_service.send_message(guild_id, channel_id, content)
+    return await discord_admin_service.send_message(
+        guild_id,
+        channel_id,
+        content,
+        mention_user_ids=mention_user_ids,
+        mention_role_ids=mention_role_ids,
+        reply_to_message_id=reply_to_message_id,
+        quote_message_id=quote_message_id,
+    )
 
 
 @mcp_server.tool(

@@ -99,6 +99,74 @@ async def test_send_message_is_guild_scoped_and_disables_mentions():
 
 
 @pytest.mark.asyncio
+async def test_send_message_can_ping_only_explicit_users_and_roles():
+    service, bot = _service_with_bot()
+    guild = MagicMock(); guild.id = 123; guild.name = "Test"
+    guild.get_member.side_effect = lambda user_id: SimpleNamespace(id=user_id) if user_id == 111 else None
+    guild.get_role.side_effect = lambda role_id: SimpleNamespace(id=role_id) if role_id == 222 else None
+    channel = MagicMock(); channel.id = 456
+    channel.send = AsyncMock(return_value=SimpleNamespace(id=789))
+    guild.get_channel.return_value = channel; bot.get_guild.return_value = guild
+    with (_runtime_policy(123), patch("services.discord_admin_service.discord.TextChannel", new=type(channel))):
+        result = await service.send_message(123, 456, "hello @everyone", mention_user_ids=[111], mention_role_ids=[222])
+    assert result["success"] is True
+    assert result["content"].startswith("<@111> <@&222> ")
+    allowed = channel.send.await_args.kwargs["allowed_mentions"]
+    assert allowed.everyone is False
+    assert [item.id for item in allowed.users] == [111]
+    assert [item.id for item in allowed.roles] == [222]
+    assert allowed.replied_user is False
+
+
+@pytest.mark.asyncio
+async def test_send_message_rejects_unknown_explicit_mention_target():
+    service, bot = _service_with_bot()
+    guild = MagicMock(); guild.id = 123; guild.get_member.return_value = None
+    guild.fetch_member = AsyncMock(return_value=None)
+    channel = MagicMock(); channel.id = 456; channel.send = AsyncMock()
+    guild.get_channel.return_value = channel; bot.get_guild.return_value = guild
+    with (_runtime_policy(123), patch("services.discord_admin_service.discord.TextChannel", new=type(channel))):
+        result = await service.send_message(123, 456, "hello", mention_user_ids=[999])
+    assert result["success"] is False
+    assert "not members" in result["message"]
+    channel.send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_send_message_can_reply_without_pinging_reply_author():
+    service, bot = _service_with_bot()
+    guild = MagicMock(); guild.id = 123
+    channel = MagicMock(); channel.id = 456
+    original = SimpleNamespace(id=654)
+    channel.fetch_message = AsyncMock(return_value=original)
+    channel.send = AsyncMock(return_value=SimpleNamespace(id=789))
+    guild.get_channel.return_value = channel; bot.get_guild.return_value = guild
+    with (_runtime_policy(123), patch("services.discord_admin_service.discord.TextChannel", new=type(channel))):
+        result = await service.send_message(123, 456, "reply", reply_to_message_id=654)
+    assert result["success"] is True
+    kwargs = channel.send.await_args.kwargs
+    assert kwargs["reference"] is original
+    assert kwargs["mention_author"] is False
+    assert kwargs["allowed_mentions"].replied_user is False
+
+
+@pytest.mark.asyncio
+async def test_send_message_can_quote_message_content():
+    service, bot = _service_with_bot()
+    guild = MagicMock(); guild.id = 123
+    channel = MagicMock(); channel.id = 456
+    quoted = SimpleNamespace(id=654, content="first line\nsecond line", author=SimpleNamespace(display_name="Yuta"))
+    channel.fetch_message = AsyncMock(return_value=quoted)
+    channel.send = AsyncMock(return_value=SimpleNamespace(id=789))
+    guild.get_channel.return_value = channel; bot.get_guild.return_value = guild
+    with (_runtime_policy(123), patch("services.discord_admin_service.discord.TextChannel", new=type(channel))):
+        result = await service.send_message(123, 456, "my response", quote_message_id=654)
+    assert result["success"] is True
+    assert result["content"] == "> **Yuta:**\n> first line\n> second line\n\nmy response"
+    assert channel.send.await_args.kwargs["reference"] is None
+
+
+@pytest.mark.asyncio
 async def test_disallowed_guild_cannot_be_mutated():
     service, bot = _service_with_bot()
     bot.get_guild.return_value = MagicMock()

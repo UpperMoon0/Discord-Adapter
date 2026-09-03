@@ -32,7 +32,7 @@ from services.concurrency_manager import (
 from services.lily_core_service import LilyCoreService
 from services.music_service import MusicService
 from services.session_service import SessionService
-from utils.mcp_oauth import MCPAuth, MCPOAuthManager
+from utils.mcp_oauth_server import MCPAuth, MCPOAuthManager
 from utils.message_utils import send_message
 from utils.service_discovery import ServiceDiscovery
 

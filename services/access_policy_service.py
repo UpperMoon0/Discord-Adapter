@@ -278,6 +278,18 @@ class AccessPolicyService:
         pipe.ltrim(self.audit_key, 0, self.audit_max_entries - 1)
         await pipe.execute()
 
+    def _adopt_authoritative_snapshot(self, snapshot: PolicySnapshot) -> None:
+        """Atomically publish a Redis-loaded snapshot and mark the store healthy."""
+        self._snapshot = snapshot
+        self._redis_available = True
+        self._store_ready = True
+        self._last_error = None
+
+    def _mark_store_error(self, exc: Exception) -> None:
+        self._redis_available = False
+        self._store_ready = False
+        self._last_error = str(exc)
+
     async def initialize(self) -> dict[str, Any]:
         """Connect to Redis and load or one-time bootstrap the authoritative policy."""
         if not self.redis_url:
@@ -293,14 +305,13 @@ class AccessPolicyService:
 
         try:
             await self._redis.ping()
-            self._redis_available = True
             raw = await self._redis.get(self.policy_key)
             if raw is not None:
-                self._snapshot = self._snapshot_from_payload(raw, "redis")
+                candidate = self._snapshot_from_payload(raw, "redis")
             else:
                 bootstrap = self._bootstrap_snapshot_from_env()
                 if bootstrap is None:
-                    self._snapshot = self._empty_snapshot("redis_empty")
+                    candidate = self._empty_snapshot("redis_empty")
                 else:
                     previous = self._empty_snapshot("redis_empty")
                     await self._persist_with_audit(
@@ -310,14 +321,11 @@ class AccessPolicyService:
                         new=bootstrap,
                         caller_context={"surface": "startup", "source": "DISCORD_ADMIN_GUILD_IDS"},
                     )
-                    self._snapshot = bootstrap
+                    candidate = bootstrap
                     logger.info("Seeded Redis Discord access policy from DISCORD_ADMIN_GUILD_IDS")
-            self._store_ready = True
-            self._last_error = None
+            self._adopt_authoritative_snapshot(candidate)
         except Exception as exc:
-            self._redis_available = False
-            self._store_ready = False
-            self._last_error = str(exc)
+            self._mark_store_error(exc)
             self._snapshot = self._empty_snapshot("redis_error")
             logger.exception("Failed to initialize Discord MCP access policy; denying all guilds")
         return self.status()
@@ -336,15 +344,11 @@ class AccessPolicyService:
                     if raw is not None
                     else self._empty_snapshot("redis_empty")
                 )
-                self._snapshot = candidate
-                self._redis_available = True
-                self._store_ready = True
-                self._last_error = None
+                self._adopt_authoritative_snapshot(candidate)
                 return {"success": True, "policy": self.status()}
             except Exception as exc:
                 self._snapshot = previous
-                self._redis_available = False
-                self._last_error = str(exc)
+                self._mark_store_error(exc)
                 logger.exception("Failed to reload Discord MCP access policy")
                 return {"success": False, "message": f"Policy reload failed: {exc}", "policy": self.status()}
 
@@ -375,6 +379,7 @@ class AccessPolicyService:
             try:
                 previous = await self._load_authoritative_snapshot()
                 if previous.allows(guild_id):
+                    self._adopt_authoritative_snapshot(previous)
                     return {"success": True, "changed": False, "policy": self.status()}
                 guilds = dict(previous.guilds)
                 guilds[guild_id] = frozenset()
@@ -392,13 +397,10 @@ class AccessPolicyService:
                     new=new,
                     caller_context=caller_context,
                 )
-                self._snapshot = new
-                self._redis_available = True
-                self._store_ready = True
-                self._last_error = None
+                self._adopt_authoritative_snapshot(new)
                 return {"success": True, "changed": True, "policy": self.status()}
             except Exception as exc:
-                self._last_error = str(exc)
+                self._mark_store_error(exc)
                 logger.exception("Failed to allow guild %s in Discord MCP policy", guild_id)
                 return {"success": False, "message": f"Policy mutation failed: {exc}", "policy": self.status()}
 
@@ -421,6 +423,7 @@ class AccessPolicyService:
             try:
                 previous = await self._load_authoritative_snapshot()
                 if guild_id not in previous.guilds:
+                    self._adopt_authoritative_snapshot(previous)
                     return {"success": True, "changed": False, "policy": self.status()}
                 guilds = dict(previous.guilds)
                 del guilds[guild_id]
@@ -438,13 +441,10 @@ class AccessPolicyService:
                     new=new,
                     caller_context=caller_context,
                 )
-                self._snapshot = new
-                self._redis_available = True
-                self._store_ready = True
-                self._last_error = None
+                self._adopt_authoritative_snapshot(new)
                 return {"success": True, "changed": True, "policy": self.status()}
             except Exception as exc:
-                self._last_error = str(exc)
+                self._mark_store_error(exc)
                 logger.exception("Failed to remove guild %s from Discord MCP policy", guild_id)
                 return {"success": False, "message": f"Policy mutation failed: {exc}", "policy": self.status()}
 

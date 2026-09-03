@@ -12,6 +12,8 @@ from pydantic import Field
 from starlette.responses import JSONResponse
 
 from mcp_extended_tools import register_extended_tools
+from mcp_policy_tools import register_policy_tools
+from services.access_policy_service import access_policy_service
 from services.extended_discord_admin_service import discord_admin_service
 
 
@@ -333,6 +335,14 @@ async def discord_delete_channel(
 register_extended_tools(
     _DescribedToolServer(mcp_server),
     discord_admin_service,
+    READ_ONLY,
+    WRITE,
+    DESTRUCTIVE,
+)
+
+register_policy_tools(
+    mcp_server,
+    access_policy_service,
     READ_ONLY,
     WRITE,
     DESTRUCTIVE,

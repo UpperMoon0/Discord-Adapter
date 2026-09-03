@@ -1,10 +1,11 @@
 import os
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from mcp_server import _transport_security
+from services.access_policy_service import PolicySnapshot, access_policy_service
 from services.discord_admin_service import DiscordAdminService
 
 
@@ -18,17 +19,28 @@ def _service_with_bot(guilds=None):
     return service, bot
 
 
-def test_policy_requires_explicit_allowlist():
+def _runtime_policy(*guild_ids, all_guilds=False):
+    snapshot = PolicySnapshot(
+        version=1,
+        revision=1,
+        all_guilds=all_guilds,
+        guilds=MappingProxyType({guild_id: frozenset() for guild_id in guild_ids}),
+        source="test",
+    )
+    return patch.object(access_policy_service, "_snapshot", snapshot)
+
+
+def test_policy_requires_explicit_runtime_allowlist():
     service, _ = _service_with_bot()
 
-    with patch.dict(os.environ, {}, clear=True):
+    with _runtime_policy():
         assert service.is_guild_allowed(123) is False
 
-    with patch.dict(os.environ, {"DISCORD_ADMIN_GUILD_IDS": "123,456"}, clear=True):
+    with _runtime_policy(123, 456):
         assert service.is_guild_allowed(123) is True
         assert service.is_guild_allowed(999) is False
 
-    with patch.dict(os.environ, {"DISCORD_ADMIN_GUILD_IDS": "*"}, clear=True):
+    with _runtime_policy(all_guilds=True):
         assert service.is_guild_allowed(999) is True
 
 
@@ -73,7 +85,7 @@ async def test_send_message_is_guild_scoped_and_disables_mentions():
     bot.get_guild.return_value = guild
 
     with (
-        patch.dict(os.environ, {"DISCORD_ADMIN_GUILD_IDS": "123"}, clear=True),
+        _runtime_policy(123),
         patch("services.discord_admin_service.discord.TextChannel", new=type(channel)),
     ):
         result = await service.send_message(123, 456, "hello")
@@ -91,7 +103,7 @@ async def test_disallowed_guild_cannot_be_mutated():
     service, bot = _service_with_bot()
     bot.get_guild.return_value = MagicMock()
 
-    with patch.dict(os.environ, {"DISCORD_ADMIN_GUILD_IDS": "123"}, clear=True):
+    with _runtime_policy(123):
         result = await service.timeout_member(999, 111, 60, "test")
 
     assert result["success"] is False

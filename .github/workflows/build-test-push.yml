@@ -38,18 +38,26 @@ jobs:
       - name: Run container health check
         run: |
           set -euo pipefail
+          docker network create discord-adapter-ci >/dev/null
+          docker run -d --rm --name discord-adapter-redis \
+            --network discord-adapter-ci \
+            redis:7-alpine
           docker run -d --rm --name discord-adapter-test \
+            --network discord-adapter-ci \
+            -e REDIS_URL=redis://discord-adapter-redis:6379/0 \
             -p 127.0.0.1:8004:8004 \
             lily-discord-adapter:ci
 
           cleanup() {
-            docker rm -f discord-adapter-test >/dev/null 2>&1 || true
+            docker rm -f discord-adapter-test discord-adapter-redis >/dev/null 2>&1 || true
+            docker network rm discord-adapter-ci >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
 
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8004/health >/dev/null; then
-              echo 'Health check passed.'
+            BODY=$(curl -fsS http://127.0.0.1:8004/health 2>/dev/null || true)
+            if printf '%s' "$BODY" | grep -q '"mcp_policy_store_ready":true'; then
+              echo 'Health check passed with Redis policy store ready.'
               exit 0
             fi
             sleep 1
@@ -57,4 +65,5 @@ jobs:
 
           echo 'Health check failed.' >&2
           docker logs discord-adapter-test >&2 || true
+          docker logs discord-adapter-redis >&2 || true
           exit 1

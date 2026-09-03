@@ -44,10 +44,22 @@ def reset_addon_state():
 
 
 def test_parse_enabled_addons():
-    assert _parse_enabled_addons(None) is None
-    assert _parse_enabled_addons("") is None
+    assert _parse_enabled_addons(None) == frozenset()
+    assert _parse_enabled_addons("") == frozenset()
     assert _parse_enabled_addons("*") is None
     assert _parse_enabled_addons(" quiz, status ,quiz ") == frozenset({"quiz", "status"})
+
+
+@pytest.mark.asyncio
+async def test_addons_are_disabled_by_default():
+    manager = AddonManager(
+        entry_point_provider=lambda: [FakeEntryPoint("good", GoodAddon)],
+    )
+
+    await manager.load(object())
+
+    assert GoodAddon.setup_calls == 0
+    assert manager.status()["loaded"] == []
 
 
 @pytest.mark.asyncio
@@ -74,8 +86,9 @@ async def test_loads_selected_addon_once_and_shuts_it_down():
 
 
 @pytest.mark.asyncio
-async def test_broken_addon_is_isolated_by_default():
+async def test_broken_addon_is_isolated_when_explicitly_enabled():
     manager = AddonManager(
+        enabled_addons=None,
         entry_point_provider=lambda: [
             FakeEntryPoint("broken", BrokenAddon),
             FakeEntryPoint("good", GoodAddon),
@@ -106,6 +119,7 @@ async def test_missing_selected_addon_is_reported():
 @pytest.mark.asyncio
 async def test_strict_mode_fails_fast():
     manager = AddonManager(
+        enabled_addons=None,
         strict=True,
         entry_point_provider=lambda: [FakeEntryPoint("broken", BrokenAddon)],
     )

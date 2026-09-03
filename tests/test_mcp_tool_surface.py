@@ -40,7 +40,7 @@ async def test_runtime_mcp_tool_surface_is_complete_and_described():
     expected = BASE_TOOL_NAMES | EXTENDED_TOOL_NAMES | POLICY_TOOL_NAMES | MEDIA_TOOL_NAMES
 
     assert set(tools) == expected
-    assert len(tools) == 59
+    assert len(tools) == 60
     assert all(tool.description and tool.description.strip() for tool in tools.values())
 
 

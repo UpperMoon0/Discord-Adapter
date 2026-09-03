@@ -23,7 +23,10 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 
 def _parse_enabled_addons(raw: str | None) -> frozenset[str] | None:
-    if raw is None or not raw.strip() or raw.strip() == "*":
+    """Parse an explicit addon allowlist; ``*`` intentionally enables all."""
+    if raw is None or not raw.strip():
+        return frozenset()
+    if raw.strip() == "*":
         return None
 
     return frozenset(part.strip() for part in raw.split(",") if part.strip())
@@ -35,7 +38,7 @@ class AddonManager:
     def __init__(
         self,
         *,
-        enabled_addons: frozenset[str] | None = None,
+        enabled_addons: frozenset[str] | None = frozenset(),
         strict: bool = False,
         entry_point_provider=None,
     ) -> None:

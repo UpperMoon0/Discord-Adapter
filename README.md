@@ -11,9 +11,11 @@ Discord bot adapter for Lily-Core. The service connects Discord to Lily-Core and
 - Consul service discovery registration
 - Health and readiness endpoints
 - Streamable HTTP MCP endpoint at `/mcp/`
+- Self-hosted OAuth 2.0 authorization-code + PKCE flow for ChatGPT
+- Dynamic OAuth client registration with rotating refresh tokens
 - Explicit per-guild MCP allowlist (fail closed by default)
 - Semantic MCP tools for messages, moderation, members, roles, channels, permissions, webhooks, emoji/stickers, invites, threads, voice, server settings, and audit logs
-- Optional bearer protection for generic MCP clients
+- Legacy static bearer mode only as a compatibility fallback
 - MCP Host/Origin allowlists for DNS-rebinding protection
 - Cross-event-loop dispatch so FastAPI/MCP requests execute Discord operations on the bot's owning event loop
 
@@ -42,9 +44,15 @@ DISCORD_ADMIN_GUILD_IDS=123456789012345678,234567890123456789
 # Enable only after enabling Server Members Intent in the Discord Developer Portal.
 DISCORD_MEMBERS_INTENT=false
 
-# Optional inbound protection for generic MCP clients.
-# Leave empty only when /mcp/ is protected by ChatGPT Secure MCP Tunnel,
-# a private network, or an authenticating reverse proxy.
+# Preferred MCP OAuth configuration.
+MCP_PUBLIC_URL=https://lily-discord-adapter.nstut.cloud
+MCP_OAUTH_OWNER_TOKEN=at-least-32-characters
+MCP_OAUTH_STATE=/app/data/oauth-state.json
+MCP_OAUTH_ACCESS_TTL=1h
+MCP_OAUTH_REFRESH_TTL=720h
+MCP_OAUTH_SERVER_NAME=Discord Adapter
+
+# Legacy compatibility only. OAuth takes precedence when configured.
 MCP_BEARER_TOKEN=
 
 # Optional DNS-rebinding allowlists. If MCP_ALLOWED_HOSTS is empty, localhost
@@ -62,6 +70,8 @@ CONSUL_HTTP_ADDR=consul:8500
 `DISCORD_ADMIN_GUILD_IDS` is an adapter-level boundary in addition to Discord's own permissions and role hierarchy. If the variable is missing or empty, MCP tools cannot read or mutate any guild.
 
 The MCP SDK validates the HTTP `Host` header to prevent DNS rebinding. Lily's production deployment already supplies `DOMAIN_NAME`, so the adapter automatically allows `lily-discord-adapter.<DOMAIN_NAME>` plus localhost. For another hostname, set `MCP_ALLOWED_HOSTS` explicitly as a comma-separated list. `MCP_ALLOWED_ORIGINS` is normally unnecessary for server-to-server MCP clients and should only contain browser origins you intentionally support.
+
+If OAuth is not configured, the adapter accepts `MCP_BEARER_TOKEN` as a legacy fallback. If neither OAuth nor the legacy bearer token is configured, `/mcp/` fails closed with HTTP 503 rather than becoming unauthenticated.
 
 ### Installation
 
@@ -81,6 +91,8 @@ docker run -d \
   -e DISCORD_BOT_TOKEN=your_token \
   -e DISCORD_ADMIN_GUILD_IDS=123456789012345678 \
   -e DOMAIN_NAME=nstut.cloud \
+  -e MCP_PUBLIC_URL=https://lily-discord-adapter.nstut.cloud \
+  -e MCP_OAUTH_OWNER_TOKEN=your_owner_approval_token \
   -e CONSUL_HTTP_ADDR=consul:8500 \
   nstut/lily-discord-adapter
 ```
@@ -93,7 +105,24 @@ The Streamable HTTP MCP endpoint is:
 https://<adapter-host>/mcp/
 ```
 
-Use the trailing slash. For a private deployment, prefer ChatGPT's Secure MCP Tunnel or another private/authenticated ingress. If the endpoint is exposed publicly, put OAuth or equivalent authentication at the edge. `MCP_BEARER_TOKEN` is available for generic MCP clients that can send an `Authorization: Bearer ...` header.
+Use the trailing slash. Public deployments should use the built-in OAuth flow. The adapter exposes OAuth protected-resource metadata, authorization-server metadata, dynamic client registration, owner approval, authorization-code exchange with PKCE S256, and refresh-token rotation.
+
+The OAuth endpoints are:
+
+```text
+/.well-known/oauth-protected-resource
+/.well-known/oauth-protected-resource/mcp
+/.well-known/oauth-authorization-server
+/oauth/register
+/oauth/authorize
+/oauth/token
+```
+
+For production, `MCP_OAUTH_OWNER_TOKEN` is an **owner approval secret**, not an access token shared with ChatGPT. ChatGPT dynamically registers a client, redirects the owner to the adapter's approval page, and receives its own short-lived access token plus rotating refresh token after PKCE verification. Access/refresh values and client secrets are persisted only as SHA-256 hashes in `MCP_OAUTH_STATE`, which should live on the persistent `/app/data` volume with mode `0600`.
+
+Changing `MCP_OAUTH_OWNER_TOKEN` invalidates persisted access and refresh grants on the next process start while preserving registered clients, matching Lily-Shell's owner-token rotation behavior.
+
+The production Lily stack uses the same Key Vault owner approval secret for Lily-Shell and Discord Adapter (`lily-mcp-owner-token`), while each service keeps separate OAuth clients, authorization codes, access tokens, refresh tokens, state files, issuers, and resource audiences. A Lily-Shell access token is therefore not valid for Discord Adapter and vice versa.
 
 The MCP server intentionally exposes semantic Discord operations instead of a raw Discord REST proxy or arbitrary command execution. This lets an MCP host resolve a server/member/channel/role first and then call one narrow operation with explicit IDs.
 
@@ -223,7 +252,7 @@ The existing bot-control routes remain available under `/api/bot`, including sta
 ```text
                          ChatGPT / MCP client
                                   |
-                          Streamable HTTP
+                         OAuth + Streamable HTTP
                                   v
 ┌─────────────┐     ┌─────────────────────────┐     ┌─────────────┐
 │   Discord   │<--->│     Discord Adapter     │<--->│  Lily-Core  │
@@ -238,13 +267,13 @@ The existing bot-control routes remain available under `/api/bot`, including sta
 
 MCP administration is constrained by three layers:
 
-1. Inbound tunnel/authentication or private network boundary.
+1. OAuth client authorization using the owner approval secret.
 2. `DISCORD_ADMIN_GUILD_IDS` in the adapter.
 3. Discord bot permissions and role hierarchy inside each guild.
 
 ## Testing
 
-CI builds the Docker image, runs Python syntax compilation, executes pytest, and starts the resulting container for a live `/health` check. MCP coverage includes a runtime SDK contract test that lists the server's tools and verifies the complete semantic surface and destructive annotations.
+CI builds the Docker image, runs Python syntax compilation, executes pytest, and starts the resulting container for a live `/health` check. MCP coverage includes a runtime SDK contract test that lists the server's tools and verifies the complete semantic surface and destructive annotations. OAuth coverage exercises metadata discovery, dynamic registration, owner approval, PKCE code exchange, code replay rejection, MCP bearer enforcement, refresh-token rotation, persistent hashed state, owner-token rotation, resource isolation, and fail-closed behavior.
 
 ## Docker Compose
 

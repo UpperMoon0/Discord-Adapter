@@ -12,8 +12,10 @@ from pydantic import Field
 from starlette.responses import JSONResponse
 
 from mcp_extended_tools import register_extended_tools
+from mcp_media_tools import register_media_tools
 from mcp_policy_tools import register_policy_tools
 from services.access_policy_service import access_policy_service
+from services.discord_media_service import discord_media_service
 from services.extended_discord_admin_service import discord_admin_service
 
 
@@ -373,6 +375,12 @@ register_policy_tools(
     READ_ONLY,
     WRITE,
     DESTRUCTIVE,
+)
+
+register_media_tools(
+    mcp_server,
+    discord_media_service,
+    READ_ONLY,
 )
 
 

@@ -26,8 +26,7 @@ def _parse_enabled_addons(raw: str | None) -> frozenset[str] | None:
     if raw is None or not raw.strip() or raw.strip() == "*":
         return None
 
-    values = frozenset(part.strip() for part in raw.split(",") if part.strip())
-    return values
+    return frozenset(part.strip() for part in raw.split(",") if part.strip())
 
 
 class AddonManager:
@@ -54,7 +53,7 @@ class AddonManager:
             strict=_env_flag("DISCORD_ADDON_STRICT", False),
         )
 
-    def _discover(self) -> Iterable[object]:
+    def _discover_all(self) -> list[object]:
         if self._entry_point_provider is not None:
             discovered = list(self._entry_point_provider())
         else:
@@ -65,6 +64,10 @@ class AddonManager:
                 discovered = list(discovered_all.get(DISCORD_ADDON_ENTRYPOINT_GROUP, ()))
 
         discovered.sort(key=lambda item: item.name)
+        return discovered
+
+    def _discover(self) -> Iterable[object]:
+        discovered = self._discover_all()
         if self.enabled_addons is None:
             return discovered
         return [item for item in discovered if item.name in self.enabled_addons]
@@ -75,8 +78,24 @@ class AddonManager:
             return
         self._load_attempted = True
 
+        discovered = list(self._discover())
+        if self.enabled_addons is not None:
+            discovered_names = {item.name for item in discovered}
+            missing = sorted(self.enabled_addons - discovered_names)
+            for name in missing:
+                self._failed[name] = "NotInstalled: no matching addon entry point"
+                logger.error(
+                    "Configured Discord addon %s is not installed in entry-point group %s",
+                    name,
+                    DISCORD_ADDON_ENTRYPOINT_GROUP,
+                )
+            if missing and self.strict:
+                raise RuntimeError(
+                    "configured Discord addons are not installed: " + ", ".join(missing)
+                )
+
         context = DiscordAddonContext(bot=bot)
-        for entry_point in self._discover():
+        for entry_point in discovered:
             name = entry_point.name
             try:
                 target = entry_point.load()

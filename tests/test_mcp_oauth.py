@@ -1,13 +1,12 @@
 import base64
 import hashlib
-import json
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from utils.mcp_oauth import MCPAuth, MCPOAuthManager, OAuthConfig
+from utils.mcp_oauth_server import MCPAuth, MCPOAuthManager, OAuthConfig
 
 
 OWNER_TOKEN = "owner-approval-token-0123456789abcdef"
@@ -188,7 +187,7 @@ def test_owner_approval_and_resource_are_strict(tmp_path):
 
 
 def test_state_hashes_secrets_and_owner_rotation_invalidates_grants(tmp_path):
-    manager, client = make_oauth_client(tmp_path)
+    _manager, client = make_oauth_client(tmp_path)
     registration = register(client)
     code = authorize(client, registration["client_id"])
     tokens = exchange(client, registration["client_id"], code)

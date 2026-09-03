@@ -23,6 +23,7 @@ from controllers.command_controller import CommandController
 from controllers.cookies_controller import cookies_router, ws_cookies_router
 from controllers.message_controller import MessageController
 from mcp_server import build_mcp_asgi_app, mcp_server
+from services.access_policy_service import access_policy_service
 from services.bot_service import bot_service
 from services.concurrency_manager import (
     ConcurrencyManager,
@@ -218,13 +219,13 @@ def create_discord_bot():
 
 @asynccontextmanager
 async def api_lifespan(_app: FastAPI):
-    """
-    Run the MCP Streamable HTTP session manager in the parent FastAPI lifespan.
-
-    Starlette does not automatically run the lifespan of a mounted ASGI app.
-    """
-    async with mcp_server.session_manager.run():
-        yield
+    """Initialize policy storage before MCP sessions and close it on shutdown."""
+    await access_policy_service.initialize()
+    try:
+        async with mcp_server.session_manager.run():
+            yield
+    finally:
+        await access_policy_service.close()
 
 
 app = FastAPI(
@@ -255,13 +256,14 @@ async def health_check():
     global bot_enabled, bot_startup_attempted
     stats = concurrency_manager.stats if concurrency_manager else {}
     health_info = bot_service.get_health_info(concurrency_manager)
+    policy = access_policy_service.status()
 
     bot_ready = False
     if BOT and not BOT.is_closed():
         bot_ready = BOT.is_ready()
 
     return {
-        "status": "healthy",
+        "status": "healthy" if policy["store_ready"] else "degraded",
         "service": "lily-discord-adapter",
         "bot_ready": bot_ready,
         "bot_enabled": health_info.get("bot_enabled", bot_enabled),
@@ -273,26 +275,27 @@ async def health_check():
         "discord_enabled": bool(os.getenv("DISCORD_BOT_TOKEN")),
         "mcp_enabled": True,
         "mcp_auth_mode": mcp_asgi_app.mode,
-        "mcp_guild_policy_configured": bool(
-            os.getenv("DISCORD_ADMIN_GUILD_IDS", "").strip()
-        ),
+        "mcp_guild_policy_configured": policy["configured"],
+        "mcp_policy_store_ready": policy["store_ready"],
+        "mcp_guild_policy": policy,
         "concurrency": health_info.get("concurrency", stats),
     }
 
 
 @app.get("/ready")
 async def readiness_check():
-    """Readiness check endpoint - HTTP server is always ready."""
+    """Readiness check endpoint."""
     global bot_enabled, bot_startup_attempted
     stats = concurrency_manager.stats if concurrency_manager else {}
     health_info = bot_service.get_health_info(concurrency_manager)
+    policy = access_policy_service.status()
 
     bot_ready = False
     if BOT and not BOT.is_closed():
         bot_ready = BOT.is_ready()
 
     return {
-        "status": "ready",
+        "status": "ready" if policy["store_ready"] else "degraded",
         "bot_ready": bot_ready,
         "bot_enabled": health_info.get("bot_enabled", bot_enabled),
         "bot_startup_attempted": health_info.get(
@@ -300,6 +303,8 @@ async def readiness_check():
             bot_startup_attempted,
         ),
         "lily_core_available": lily_core_available,
+        "mcp_policy_store_ready": policy["store_ready"],
+        "mcp_guild_policy_configured": policy["configured"],
         "concurrency": health_info.get("concurrency", stats),
     }
 
@@ -379,10 +384,9 @@ async def main():
     health_thread = threading.Thread(target=run_health_server, daemon=True)
     health_thread.start()
 
-    if not os.getenv("DISCORD_ADMIN_GUILD_IDS", "").strip():
+    if not os.getenv("REDIS_URL", "").strip():
         logger.warning(
-            "DISCORD_ADMIN_GUILD_IDS is not configured; MCP Discord tools will "
-            "not expose or mutate any guilds."
+            "REDIS_URL is not configured; the Discord MCP access policy will fail closed."
         )
 
     if mcp_asgi_app.mode == "unconfigured":

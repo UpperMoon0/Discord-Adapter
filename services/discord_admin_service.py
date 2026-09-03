@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from datetime import timedelta
 from typing import Awaitable, Callable, TypeVar
 
 import discord
 
+from services.access_policy_service import access_policy_service
 from services.bot_service import bot_service
 
 logger = logging.getLogger("lily-discord-adapter")
@@ -22,37 +22,12 @@ class DiscordAdminService:
     def __init__(self):
         self.bot_service = bot_service
 
-    @staticmethod
-    def _configured_guild_ids() -> set[int] | None:
-        raw = os.getenv("DISCORD_ADMIN_GUILD_IDS", "").strip()
-        if not raw:
-            return None
-        if raw == "*":
-            return set()  # empty set is the explicit "all" sentinel
-
-        result: set[int] = set()
-        for value in raw.split(","):
-            value = value.strip()
-            if not value:
-                continue
-            try:
-                result.add(int(value))
-            except ValueError:
-                logger.warning("Ignoring invalid DISCORD_ADMIN_GUILD_IDS entry: %s", value)
-        return result
-
     def is_guild_allowed(self, guild_id: int) -> bool:
-        configured = self._configured_guild_ids()
-        return configured is not None and (not configured or guild_id in configured)
+        """Use the immutable Redis-backed runtime policy snapshot."""
+        return access_policy_service.is_guild_allowed(guild_id)
 
     def policy_status(self) -> dict:
-        raw = os.getenv("DISCORD_ADMIN_GUILD_IDS", "").strip()
-        configured = self._configured_guild_ids()
-        return {
-            "configured": bool(raw),
-            "all_guilds": raw == "*",
-            "guild_ids": sorted(configured) if configured else [],
-        }
+        return access_policy_service.status()
 
     def _bot_ready_error(self) -> dict | None:
         bot = self.bot_service.bot
@@ -94,7 +69,7 @@ class DiscordAdminService:
                 "success": False,
                 "message": (
                     f"Guild {guild_id} is not enabled for MCP administration. "
-                    "Add it to DISCORD_ADMIN_GUILD_IDS (or explicitly use '*')."
+                    "Inspect discord_get_access_policy and use a privileged policy mutation tool if a change is intended."
                 ),
             }
         guild = self.bot_service.bot.get_guild(guild_id)

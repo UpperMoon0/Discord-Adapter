@@ -1,4 +1,4 @@
-# Lily-Discord-Adapter
+# Discord Adapter
 
 Discord bot adapter for Lily-Core. The service connects Discord to Lily-Core and also exposes a guild-scoped Model Context Protocol (MCP) endpoint for ChatGPT administration.
 
@@ -157,7 +157,7 @@ The existing bot-control routes remain available under `/api/bot`, including sta
                           Streamable HTTP
                                   v
 ┌─────────────┐     ┌─────────────────────────┐     ┌─────────────┐
-│   Discord   │<--->│ Lily-Discord-Adapter    │<--->│  Lily-Core  │
+│   Discord   │<--->│     Discord Adapter     │<--->│  Lily-Core  │
 │   Servers   │     │  FastAPI + MCP + bot    │     │  (C++)      │
 └─────────────┘     └─────────────────────────┘     └─────────────┘
                               |

@@ -6,6 +6,8 @@ from typing import Annotated
 
 from pydantic import Field
 
+from mcp_media_app import MEDIA_UI_RESOURCE_URI
+
 
 MEDIA_TOOL_NAMES = {
     "discord_list_message_media",
@@ -38,6 +40,7 @@ def register_media_tools(server, service, read_only) -> set[str]:
             "Static images are returned directly when practical; GIFs and videos are sampled into representative frames."
         ),
         annotations=read_only,
+        meta={"ui": {"resourceUri": MEDIA_UI_RESOURCE_URI}},
         structured_output=False,
     )
     async def discord_read_message_media(

@@ -85,7 +85,22 @@ async def test_broken_addon_is_isolated_by_default():
     await manager.load(object())
 
     assert manager.status()["loaded"] == ["good"]
-    assert "RuntimeError: boom" == manager.status()["failed"]["broken"]
+    assert manager.status()["failed"]["broken"] == "RuntimeError: boom"
+
+
+@pytest.mark.asyncio
+async def test_missing_selected_addon_is_reported():
+    manager = AddonManager(
+        enabled_addons=frozenset({"quiz"}),
+        entry_point_provider=lambda: [],
+    )
+
+    await manager.load(object())
+
+    assert manager.status()["loaded"] == []
+    assert manager.status()["failed"]["quiz"] == (
+        "NotInstalled: no matching addon entry point"
+    )
 
 
 @pytest.mark.asyncio
@@ -96,4 +111,16 @@ async def test_strict_mode_fails_fast():
     )
 
     with pytest.raises(RuntimeError, match="boom"):
+        await manager.load(object())
+
+
+@pytest.mark.asyncio
+async def test_strict_mode_rejects_missing_selected_addon():
+    manager = AddonManager(
+        enabled_addons=frozenset({"quiz"}),
+        strict=True,
+        entry_point_provider=lambda: [],
+    )
+
+    with pytest.raises(RuntimeError, match="quiz"):
         await manager.load(object())

@@ -30,13 +30,30 @@ mcp_server = MCPServer(
 )
 
 
+class _DescribedToolServer:
+    """Proxy that guarantees extended tools expose a model-readable description."""
+
+    def __init__(self, server: MCPServer):
+        self._server = server
+
+    def tool(self, **metadata):
+        metadata.setdefault("description", metadata.get("title") or "Discord administration tool")
+        return self._server.tool(**metadata)
+
+
 def _csv_env(name: str) -> list[str]:
     """Read a comma-separated environment setting, dropping blank entries."""
     return [value.strip() for value in os.getenv(name, "").split(",") if value.strip()]
 
 
 def _transport_security() -> TransportSecuritySettings:
-    """Configure MCP DNS-rebinding protection for local/tunnel and hosted use."""
+    """
+    Configure MCP's DNS-rebinding protection for both local/tunnel and hosted use.
+
+    The MCP SDK defaults to localhost-only Host validation. Lily's production
+    deployment already provides DOMAIN_NAME, so derive the public adapter host
+    from it unless MCP_ALLOWED_HOSTS is explicitly configured.
+    """
     allowed_hosts = _csv_env("MCP_ALLOWED_HOSTS")
     if not allowed_hosts:
         allowed_hosts = [
@@ -63,20 +80,31 @@ def _transport_security() -> TransportSecuritySettings:
     )
 
 
-@mcp_server.tool(title="List allowed Discord servers", annotations=READ_ONLY)
+@mcp_server.tool(
+    title="List allowed Discord servers",
+    description="List Discord servers explicitly enabled for MCP administration and the bot's moderation capabilities in each server.",
+    annotations=READ_ONLY,
+)
 async def discord_list_servers() -> dict:
-    """List Discord servers explicitly enabled for MCP administration and Lily's capabilities."""
     return await discord_admin_service.list_guilds()
 
 
-@mcp_server.tool(title="List Discord channels", annotations=READ_ONLY)
+@mcp_server.tool(
+    title="List Discord channels",
+    description="List channels in one allowed Discord server so a target channel can be resolved before an action.",
+    annotations=READ_ONLY,
+)
 async def discord_list_channels(
     guild_id: Annotated[int, Field(description="Discord guild/server ID from discord_list_servers")],
 ) -> dict:
     return await discord_admin_service.list_channels(guild_id)
 
 
-@mcp_server.tool(title="Find Discord members", annotations=READ_ONLY)
+@mcp_server.tool(
+    title="Find Discord members",
+    description="Search members in one allowed Discord server by username, display name, global name, or exact user ID.",
+    annotations=READ_ONLY,
+)
 async def discord_find_members(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     query: Annotated[str, Field(min_length=1, description="Username, display name, global name, or exact user ID")],
@@ -85,7 +113,11 @@ async def discord_find_members(
     return await discord_admin_service.find_members(guild_id, query, limit)
 
 
-@mcp_server.tool(title="Get Discord member", annotations=READ_ONLY)
+@mcp_server.tool(
+    title="Get Discord member",
+    description="Get one Discord member including roles and current timeout state.",
+    annotations=READ_ONLY,
+)
 async def discord_get_member(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     user_id: Annotated[int, Field(description="Discord user ID")],
@@ -93,7 +125,11 @@ async def discord_get_member(
     return await discord_admin_service.get_member(guild_id, user_id)
 
 
-@mcp_server.tool(title="Read Discord messages", annotations=READ_ONLY)
+@mcp_server.tool(
+    title="Read Discord messages",
+    description="Read recent messages from one text channel or thread in an allowed Discord server.",
+    annotations=READ_ONLY,
+)
 async def discord_read_messages(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     channel_id: Annotated[int, Field(description="Discord text channel ID")],
@@ -102,14 +138,22 @@ async def discord_read_messages(
     return await discord_admin_service.read_messages(guild_id, channel_id, limit)
 
 
-@mcp_server.tool(title="List Discord roles", annotations=READ_ONLY)
+@mcp_server.tool(
+    title="List Discord roles",
+    description="List roles in one allowed Discord server so role IDs can be resolved safely before role operations.",
+    annotations=READ_ONLY,
+)
 async def discord_list_roles(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
 ) -> dict:
     return await discord_admin_service.list_roles(guild_id)
 
 
-@mcp_server.tool(title="Read Discord audit log", annotations=READ_ONLY)
+@mcp_server.tool(
+    title="Read Discord audit log",
+    description="Read recent Discord server audit-log entries when the bot has View Audit Log permission.",
+    annotations=READ_ONLY,
+)
 async def discord_get_audit_log(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     limit: Annotated[int, Field(ge=1, le=100)] = 25,
@@ -117,7 +161,11 @@ async def discord_get_audit_log(
     return await discord_admin_service.get_audit_log(guild_id, limit)
 
 
-@mcp_server.tool(title="Send Discord message", annotations=WRITE)
+@mcp_server.tool(
+    title="Send Discord message",
+    description="Send one message as the Discord bot. Discord mentions are disabled to prevent accidental pings.",
+    annotations=WRITE,
+)
 async def discord_send_message(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     channel_id: Annotated[int, Field(description="Discord text channel ID")],
@@ -126,7 +174,11 @@ async def discord_send_message(
     return await discord_admin_service.send_message(guild_id, channel_id, content)
 
 
-@mcp_server.tool(title="Delete Discord message", annotations=DESTRUCTIVE)
+@mcp_server.tool(
+    title="Delete Discord message",
+    description="Delete one specific Discord message from one allowed server.",
+    annotations=DESTRUCTIVE,
+)
 async def discord_delete_message(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     channel_id: Annotated[int, Field(description="Discord text channel ID")],
@@ -136,7 +188,11 @@ async def discord_delete_message(
     return await discord_admin_service.delete_message(guild_id, channel_id, message_id, reason)
 
 
-@mcp_server.tool(title="Timeout Discord member", annotations=DESTRUCTIVE)
+@mcp_server.tool(
+    title="Timeout Discord member",
+    description="Timeout one Discord member for a bounded duration of up to 28 days.",
+    annotations=DESTRUCTIVE,
+)
 async def discord_timeout_member(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     user_id: Annotated[int, Field(description="Discord user ID")],
@@ -146,7 +202,11 @@ async def discord_timeout_member(
     return await discord_admin_service.timeout_member(guild_id, user_id, duration_seconds, reason)
 
 
-@mcp_server.tool(title="Clear Discord timeout", annotations=WRITE)
+@mcp_server.tool(
+    title="Clear Discord timeout",
+    description="Remove the current Discord timeout from one member.",
+    annotations=WRITE,
+)
 async def discord_clear_timeout(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     user_id: Annotated[int, Field(description="Discord user ID")],
@@ -155,7 +215,11 @@ async def discord_clear_timeout(
     return await discord_admin_service.clear_timeout(guild_id, user_id, reason)
 
 
-@mcp_server.tool(title="Kick Discord member", annotations=DESTRUCTIVE)
+@mcp_server.tool(
+    title="Kick Discord member",
+    description="Kick one member from an allowed Discord server.",
+    annotations=DESTRUCTIVE,
+)
 async def discord_kick_member(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     user_id: Annotated[int, Field(description="Discord user ID")],
@@ -164,7 +228,11 @@ async def discord_kick_member(
     return await discord_admin_service.kick_member(guild_id, user_id, reason)
 
 
-@mcp_server.tool(title="Ban Discord member", annotations=DESTRUCTIVE)
+@mcp_server.tool(
+    title="Ban Discord member",
+    description="Ban one user from an allowed Discord server and optionally delete recent messages.",
+    annotations=DESTRUCTIVE,
+)
 async def discord_ban_member(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     user_id: Annotated[int, Field(description="Discord user ID")],
@@ -174,7 +242,11 @@ async def discord_ban_member(
     return await discord_admin_service.ban_member(guild_id, user_id, reason, delete_message_seconds)
 
 
-@mcp_server.tool(title="Unban Discord member", annotations=WRITE)
+@mcp_server.tool(
+    title="Unban Discord member",
+    description="Remove a Discord ban for one user ID in an allowed server.",
+    annotations=WRITE,
+)
 async def discord_unban_member(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     user_id: Annotated[int, Field(description="Discord user ID")],
@@ -183,7 +255,11 @@ async def discord_unban_member(
     return await discord_admin_service.unban_member(guild_id, user_id, reason)
 
 
-@mcp_server.tool(title="Add Discord role", annotations=WRITE)
+@mcp_server.tool(
+    title="Add Discord role",
+    description="Assign one existing Discord role to one member.",
+    annotations=WRITE,
+)
 async def discord_add_role(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     user_id: Annotated[int, Field(description="Discord user ID")],
@@ -193,7 +269,11 @@ async def discord_add_role(
     return await discord_admin_service.add_role(guild_id, user_id, role_id, reason)
 
 
-@mcp_server.tool(title="Remove Discord role", annotations=DESTRUCTIVE)
+@mcp_server.tool(
+    title="Remove Discord role",
+    description="Remove one existing Discord role from one member.",
+    annotations=DESTRUCTIVE,
+)
 async def discord_remove_role(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     user_id: Annotated[int, Field(description="Discord user ID")],
@@ -203,7 +283,11 @@ async def discord_remove_role(
     return await discord_admin_service.remove_role(guild_id, user_id, role_id, reason)
 
 
-@mcp_server.tool(title="Create Discord text channel", annotations=WRITE)
+@mcp_server.tool(
+    title="Create Discord text channel",
+    description="Create a text channel in one allowed Discord server, optionally under a category.",
+    annotations=WRITE,
+)
 async def discord_create_text_channel(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     name: Annotated[str, Field(min_length=1, max_length=100)],
@@ -214,7 +298,11 @@ async def discord_create_text_channel(
     return await discord_admin_service.create_text_channel(guild_id, name, topic, category_id, reason)
 
 
-@mcp_server.tool(title="Update Discord text channel", annotations=WRITE)
+@mcp_server.tool(
+    title="Update Discord text channel",
+    description="Change a text channel's name, topic, or slowmode delay.",
+    annotations=WRITE,
+)
 async def discord_update_text_channel(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     channel_id: Annotated[int, Field(description="Discord text channel ID")],
@@ -226,7 +314,11 @@ async def discord_update_text_channel(
     return await discord_admin_service.update_text_channel(guild_id, channel_id, name, topic, slowmode_delay, reason)
 
 
-@mcp_server.tool(title="Delete Discord channel", annotations=DESTRUCTIVE)
+@mcp_server.tool(
+    title="Delete Discord channel",
+    description="Delete one Discord channel or thread in an allowed server.",
+    annotations=DESTRUCTIVE,
+)
 async def discord_delete_channel(
     guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     channel_id: Annotated[int, Field(description="Discord channel ID")],
@@ -236,12 +328,20 @@ async def discord_delete_channel(
 
 
 # Register the larger semantic admin surface separately so it stays testable without
-# coupling tests to MCPServer's private registry implementation.
-register_extended_tools(mcp_server, discord_admin_service, READ_ONLY, WRITE, DESTRUCTIVE)
+# coupling tests to MCPServer's private registry implementation. The proxy guarantees
+# every extended tool exposes at least its human-readable title as a description.
+register_extended_tools(
+    _DescribedToolServer(mcp_server),
+    discord_admin_service,
+    READ_ONLY,
+    WRITE,
+    DESTRUCTIVE,
+)
 
 
 @mcp_server.custom_route("/health", methods=["GET"])
 async def mcp_health(_request):
+    """MCP-only liveness endpoint."""
     return JSONResponse(
         {
             "status": "ok",
@@ -253,6 +353,7 @@ async def mcp_health(_request):
 
 
 def build_mcp_asgi_app():
+    """Build the mountable Streamable HTTP ASGI app."""
     return mcp_server.streamable_http_app(
         json_response=True,
         streamable_http_path="/",

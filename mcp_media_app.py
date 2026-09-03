@@ -61,18 +61,8 @@ MEDIA_VIEWER_HTML = r"""<!doctype html>
     const status = document.getElementById("status");
     const gallery = document.getElementById("gallery");
     const meta = document.getElementById("meta");
-    const objectUrls = [];
-
     function clearImages() {
-      for (const url of objectUrls.splice(0)) URL.revokeObjectURL(url);
       gallery.replaceChildren();
-    }
-
-    function decodeBase64(data, mimeType) {
-      const raw = atob(data);
-      const bytes = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      return new Blob([bytes], { type: mimeType || "image/png" });
     }
 
     function render(result) {
@@ -103,10 +93,11 @@ MEDIA_VIEWER_HTML = r"""<!doctype html>
 
       for (const image of images) {
         const mime = image.mimeType || image.mime_type || "image/png";
-        const url = URL.createObjectURL(decodeBase64(image.data, mime));
-        objectUrls.push(url);
         const element = document.createElement("img");
-        element.src = url;
+        // MCP Apps hosts are required to allow data: images, while blob: is not
+        // guaranteed by the standard CSP. Keep the returned MCP ImageContent
+        // bytes self-contained so the viewer works in strict hosts such as ChatGPT.
+        element.src = `data:${mime};base64,${image.data}`;
         element.alt = "Discord media";
         gallery.appendChild(element);
       }

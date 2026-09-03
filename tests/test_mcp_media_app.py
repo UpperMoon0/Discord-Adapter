@@ -2,7 +2,7 @@ import pytest
 from mcp import Client
 from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 
-from mcp_media_app import MEDIA_UI_RESOURCE_URI
+from mcp_media_app import MEDIA_UI_RESOURCE_URI, MEDIA_VIEWER_HTML
 from mcp_server import mcp_server
 
 
@@ -26,3 +26,8 @@ async def test_media_reader_is_bound_to_renderable_mcp_app_resource():
 
 def test_mcp_apps_extension_is_advertised():
     assert EXTENSION_ID in mcp_server._lowlevel_server.extensions
+
+
+def test_media_viewer_uses_csp_safe_data_urls_for_image_content():
+    assert "URL.createObjectURL" not in MEDIA_VIEWER_HTML
+    assert "data:${mime};base64,${image.data}" in MEDIA_VIEWER_HTML

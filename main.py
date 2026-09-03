@@ -32,7 +32,7 @@ from services.concurrency_manager import (
 from services.lily_core_service import LilyCoreService
 from services.music_service import MusicService
 from services.session_service import SessionService
-from utils.mcp_auth import OptionalBearerAuth
+from utils.mcp_oauth_server import MCPAuth, MCPOAuthManager
 from utils.message_utils import send_message
 from utils.service_discovery import ServiceDiscovery
 
@@ -237,8 +237,15 @@ app.include_router(bot_router)
 app.include_router(cookies_router)
 app.include_router(ws_cookies_router)
 
+# OAuth is the preferred authentication mode. If it is not configured, the
+# legacy MCP_BEARER_TOKEN remains available for compatibility. With neither
+# configured, /mcp/ fails closed instead of becoming public.
+mcp_oauth_manager = MCPOAuthManager.from_env()
+if mcp_oauth_manager:
+    app.include_router(mcp_oauth_manager.router)
+
 # Streamable HTTP MCP endpoint. Use /mcp/ (with the trailing slash).
-mcp_asgi_app = OptionalBearerAuth(build_mcp_asgi_app())
+mcp_asgi_app = MCPAuth(build_mcp_asgi_app(), mcp_oauth_manager)
 app.mount("/mcp", mcp_asgi_app)
 
 
@@ -265,6 +272,7 @@ async def health_check():
         "lily_core_available": lily_core_available,
         "discord_enabled": bool(os.getenv("DISCORD_BOT_TOKEN")),
         "mcp_enabled": True,
+        "mcp_auth_mode": mcp_asgi_app.mode,
         "mcp_guild_policy_configured": bool(
             os.getenv("DISCORD_ADMIN_GUILD_IDS", "").strip()
         ),
@@ -377,11 +385,18 @@ async def main():
             "not expose or mutate any guilds."
         )
 
-    if not os.getenv("MCP_BEARER_TOKEN"):
+    if mcp_asgi_app.mode == "unconfigured":
         logger.warning(
-            "MCP_BEARER_TOKEN is not configured. Only expose /mcp/ through a "
-            "ChatGPT secure tunnel, private network, or authenticating reverse proxy."
+            "MCP authentication is not configured; /mcp/ will fail closed with HTTP 503. "
+            "Configure MCP OAuth or the legacy MCP_BEARER_TOKEN before connecting a client."
         )
+    elif mcp_asgi_app.mode == "bearer":
+        logger.warning(
+            "MCP is using legacy static bearer authentication. OAuth is recommended for "
+            "ChatGPT-facing deployments."
+        )
+    else:
+        logger.info("MCP OAuth authentication enabled for %s", mcp_oauth_manager.config.resource)
 
     if not bot_token:
         logger.warning("DISCORD_BOT_TOKEN not set - Discord bot features disabled")

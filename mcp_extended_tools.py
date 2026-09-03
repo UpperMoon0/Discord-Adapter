@@ -16,6 +16,7 @@ EXTENDED_TOOL_NAMES = {
     "discord_list_channel_permissions",
     "discord_set_channel_permissions",
     "discord_clear_channel_permissions",
+    "discord_update_channel",
     "discord_move_channel",
     "discord_list_webhooks",
     "discord_create_webhook",
@@ -145,6 +146,15 @@ def register_extended_tools(server, service, read_only, write, destructive) -> s
         reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
     ) -> dict:
         return await service.clear_channel_permissions(guild_id, channel_id, target_type, target_id, reason)
+
+    @server.tool(title="Rename Discord guild channel", annotations=write)
+    async def discord_update_channel(
+        guild_id: Annotated[int, Field(description="Discord guild/server ID")],
+        channel_id: Annotated[int, Field(description="Discord guild channel ID")],
+        name: Annotated[str, Field(min_length=1, max_length=100, description="New channel/category name")],
+        reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
+    ) -> dict:
+        return await service.update_channel(guild_id, channel_id, name, reason)
 
     @server.tool(title="Move/reorder Discord channel", annotations=write)
     async def discord_move_channel(

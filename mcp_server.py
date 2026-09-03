@@ -12,6 +12,7 @@ from pydantic import Field
 from starlette.responses import JSONResponse
 
 from mcp_extended_tools import register_extended_tools
+from mcp_media_app import build_media_apps_extension
 from mcp_media_tools import register_media_tools
 from mcp_policy_tools import register_policy_tools
 from services.access_policy_service import access_policy_service
@@ -23,6 +24,8 @@ READ_ONLY = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_worl
 WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=True)
 DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False, open_world_hint=True)
 
+media_apps = build_media_apps_extension()
+
 mcp_server = MCPServer(
     "Lily Discord Admin",
     instructions=(
@@ -31,6 +34,7 @@ mcp_server = MCPServer(
         "Use a separate tool call for each guild when applying an action to multiple servers. "
         "Prefer the narrow semantic tool for the requested operation; never infer IDs from names when lookup tools are available."
     ),
+    extensions=[media_apps],
 )
 
 
@@ -217,7 +221,6 @@ async def discord_delete_message(
     reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
 ) -> dict:
     return await discord_admin_service.delete_message(guild_id, channel_id, message_id, reason)
-
 
 @mcp_server.tool(
     title="Timeout Discord member",

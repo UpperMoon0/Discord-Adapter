@@ -24,6 +24,7 @@ from controllers.cookies_controller import cookies_router, ws_cookies_router
 from controllers.message_controller import MessageController
 from mcp_server import build_mcp_asgi_app, mcp_server
 from services.access_policy_service import access_policy_service
+from services.addon_manager import AddonManager
 from services.bot_service import bot_service
 from services.concurrency_manager import (
     ConcurrencyManager,
@@ -72,6 +73,21 @@ def get_lily_core_http_url():
     if sd:
         return sd.get_service_url("lily-core", "http")
     return None
+
+
+def get_addon_status() -> dict:
+    """Return addon state without exposing addon internals."""
+    manager = getattr(BOT, "addon_manager", None) if BOT else None
+    if manager:
+        return manager.status()
+    return {
+        "entrypoint_group": "discord_adapter.addons",
+        "enabled": [],
+        "strict": env_flag("DISCORD_ADDON_STRICT", False),
+        "load_attempted": False,
+        "loaded": [],
+        "failed": {},
+    }
 
 
 async def process_message_task(message_data: dict):
@@ -163,8 +179,21 @@ async def initialize_services():
     logger.info("lily-core available: %s", lily_core_available)
 
 
+class DiscordAdapterBot(commands.Bot):
+    """Discord bot host with a stable out-of-tree addon lifecycle."""
+
+    def __init__(self, *args, addon_manager: AddonManager, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.addon_manager = addon_manager
+
+    async def setup_hook(self) -> None:
+        await self.addon_manager.load(self)
+
+
 def create_discord_bot():
     """Create and configure a new Discord bot instance."""
+    global message_controller, command_controller
+
     intents = discord.Intents.default()
     intents.message_content = True
     intents.voice_states = True
@@ -172,32 +201,35 @@ def create_discord_bot():
     # opt-in so an existing deployment is not rejected by the Discord gateway.
     intents.members = env_flag("DISCORD_MEMBERS_INTENT", False)
 
-    bot = commands.Bot(
+    addon_manager = AddonManager.from_env()
+    bot = DiscordAdapterBot(
         command_prefix='!',
         intents=intents,
         description='Lily Discord Adapter - Connects Discord to Lily-Core',
+        addon_manager=addon_manager,
+    )
+
+    # Register built-in handlers once per bot instance. Addons are registered in
+    # setup_hook before the gateway becomes ready, and all commands are synced
+    # together from on_ready.
+    message_controller = MessageController(
+        bot,
+        session_service,
+        lily_core_service,
+        concurrency_manager,
+        user_rate_limiter,
+    )
+    command_controller = CommandController(
+        bot,
+        session_service,
+        lily_core_service,
+        music_service,
     )
 
     @bot.event
     async def on_ready():
         """Bot is ready and connected to Discord."""
-        global message_controller, command_controller
-
         logger.info("Bot logged in as %s (%s)", bot.user.name, bot.user.id)
-
-        message_controller = MessageController(
-            bot,
-            session_service,
-            lily_core_service,
-            concurrency_manager,
-            user_rate_limiter,
-        )
-        command_controller = CommandController(
-            bot,
-            session_service,
-            lily_core_service,
-            music_service,
-        )
 
         try:
             synced = await bot.tree.sync()
@@ -212,6 +244,7 @@ def create_discord_bot():
             asyncio.get_running_loop(),
         )
 
+        logger.info("Discord addons: %s", addon_manager.status())
         logger.info("Lily-Discord-Adapter is ready!")
 
     return bot
@@ -273,6 +306,7 @@ async def health_check():
         ),
         "lily_core_available": lily_core_available,
         "discord_enabled": bool(os.getenv("DISCORD_BOT_TOKEN")),
+        "discord_addons": get_addon_status(),
         "mcp_enabled": True,
         "mcp_auth_mode": mcp_asgi_app.mode,
         "mcp_guild_policy_configured": policy["configured"],
@@ -303,6 +337,7 @@ async def readiness_check():
             bot_startup_attempted,
         ),
         "lily_core_available": lily_core_available,
+        "discord_addons": get_addon_status(),
         "mcp_policy_store_ready": policy["store_ready"],
         "mcp_guild_policy_configured": policy["configured"],
         "concurrency": health_info.get("concurrency", stats),
@@ -348,6 +383,12 @@ async def monitor_lily_core():
         await asyncio.sleep(10)
 
 
+async def _shutdown_bot_addons(bot) -> None:
+    manager = getattr(bot, "addon_manager", None) if bot else None
+    if manager:
+        await manager.shutdown()
+
+
 async def shutdown():
     """Graceful shutdown."""
     global concurrency_manager, session_service, BOT
@@ -357,6 +398,8 @@ async def shutdown():
         session_service._sessions.clear()
     if lily_core_service:
         await lily_core_service.close()
+    if BOT:
+        await _shutdown_bot_addons(BOT)
     if BOT and not BOT.is_closed():
         await BOT.close()
 
@@ -430,6 +473,11 @@ async def main():
                 logger.error("Bot execution error: %s", exc)
                 await asyncio.sleep(5)
             finally:
+                if BOT:
+                    try:
+                        await _shutdown_bot_addons(BOT)
+                    except Exception:
+                        logger.exception("Failed to stop Discord addons")
                 if BOT and not BOT.is_closed():
                     try:
                         await BOT.close()

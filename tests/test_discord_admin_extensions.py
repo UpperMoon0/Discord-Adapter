@@ -222,6 +222,51 @@ async def test_channel_permission_overwrite_rejects_unknown_flag():
 
 
 @pytest.mark.asyncio
+async def test_update_channel_renames_any_guild_channel():
+    service, bot = _service_with_bot()
+    guild = _guild(bot)
+    channel = MagicMock()
+    channel.id = 54
+    channel.name = "Old Name"
+    channel.type = discord.ChannelType.voice
+    channel.edit = AsyncMock()
+    edited = MagicMock()
+    edited.id = channel.id
+    edited.name = "Voice Lounge"
+    edited.type = discord.ChannelType.voice
+    channel.edit.return_value = edited
+    guild.get_channel.return_value = channel
+
+    with _allowed():
+        result = await service.update_channel(GUILD_ID, channel.id, " Voice Lounge ", "rename")
+
+    assert result == {
+        "success": True,
+        "guild_id": GUILD_ID,
+        "channel_id": channel.id,
+        "channel_name": "Voice Lounge",
+        "channel_type": str(discord.ChannelType.voice),
+    }
+    channel.edit.assert_awaited_once_with(name="Voice Lounge", reason="rename")
+
+
+@pytest.mark.asyncio
+async def test_update_channel_validates_name_and_missing_channel():
+    service, bot = _service_with_bot()
+    guild = _guild(bot)
+    guild.get_channel.return_value = None
+
+    invalid = await service.update_channel(GUILD_ID, 54, "   ")
+    with _allowed():
+        missing = await service.update_channel(GUILD_ID, 54, "renamed")
+
+    assert invalid["success"] is False
+    assert "1-100" in invalid["message"]
+    assert missing["success"] is False
+    assert "not found" in missing["message"]
+
+
+@pytest.mark.asyncio
 async def test_move_channel_supports_category_and_position():
     service, bot = _service_with_bot()
     guild = _guild(bot)

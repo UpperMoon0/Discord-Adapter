@@ -453,6 +453,35 @@ class DiscordAdminExtensions:
 
         return await self._run(op)
 
+    async def update_channel(
+        self,
+        guild_id: int,
+        channel_id: int,
+        name: str,
+        reason: str = "",
+    ) -> dict:
+        name = name.strip()
+        if not 1 <= len(name) <= 100:
+            return {"success": False, "message": "channel name must contain 1-100 characters"}
+
+        async def op() -> dict:
+            guild, guild_error = self._guild(guild_id)
+            if guild_error:
+                return guild_error
+            channel = guild.get_channel(channel_id)
+            if channel is None or not hasattr(channel, "edit"):
+                return {"success": False, "message": f"Guild channel {channel_id} not found"}
+            edited = await channel.edit(name=name, reason=self._reason(reason))
+            return {
+                "success": True,
+                "guild_id": guild.id,
+                "channel_id": edited.id,
+                "channel_name": edited.name,
+                "channel_type": str(getattr(edited, "type", "unknown")),
+            }
+
+        return await self._run(op)
+
     async def move_channel(
         self,
         guild_id: int,

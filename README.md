@@ -146,7 +146,7 @@ The administration surface covers:
 - voice state/movement
 - Discord audit-log reads
 
-Messages sent through MCP disable Discord mentions by default, preventing accidental `@everyone`, `@here`, user, or role pings.
+Messages sent through MCP suppress Discord mentions by default. `discord_send_message` can explicitly ping selected users or roles with `mention_user_ids` / `mention_role_ids`, reply to a specific message with `reply_to_message_id`, or quote a message with `quote_message_id`. The adapter constrains `allowed_mentions` to only the explicitly selected targets and never enables `@everyone` or `@here`; replies also do not ping the original author unless that user is explicitly selected. `discord_read_messages` includes message jump URLs and reply/reference metadata so callers can resolve reply and quote targets safely.
 
 MCP does not bypass Discord permissions or role hierarchy. Prefer granting only the Discord permissions the bot actually needs instead of `Administrator`.
 

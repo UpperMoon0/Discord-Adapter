@@ -193,6 +193,45 @@ class DiscordAdminService:
             return {"success": True, "guild_id": guild.id, "member": self._member_summary(member)}
         return await self._run(op)
 
+    @staticmethod
+    def _message_summary(message: discord.Message) -> dict:
+        reference = message.reference
+        resolved = getattr(reference, "resolved", None) if reference else None
+        return {
+            "id": message.id,
+            "author": {
+                "id": message.author.id,
+                "name": str(message.author),
+                "display_name": getattr(message.author, "display_name", None),
+                "bot": message.author.bot,
+            },
+            "content": message.content,
+            "created_at": message.created_at.isoformat(),
+            "edited_at": message.edited_at.isoformat() if message.edited_at else None,
+            "attachments": [a.url for a in message.attachments],
+            "pinned": message.pinned,
+            "jump_url": message.jump_url,
+            "reference": (
+                {
+                    "message_id": reference.message_id,
+                    "channel_id": reference.channel_id,
+                    "guild_id": reference.guild_id,
+                    "resolved": (
+                        {
+                            "id": resolved.id,
+                            "author_id": resolved.author.id,
+                            "author_name": str(resolved.author),
+                            "content": resolved.content,
+                        }
+                        if isinstance(resolved, discord.Message)
+                        else None
+                    ),
+                }
+                if reference
+                else None
+            ),
+        }
+
     async def read_messages(self, guild_id: int, channel_id: int, limit: int = 25) -> dict:
         limit = max(1, min(limit, 100))
 
@@ -205,20 +244,7 @@ class DiscordAdminService:
                 return {"success": False, "message": f"Channel {channel_id} is not a readable text channel"}
             messages = []
             async for message in channel.history(limit=limit):
-                messages.append({
-                    "id": message.id,
-                    "author": {
-                        "id": message.author.id,
-                        "name": str(message.author),
-                        "display_name": getattr(message.author, "display_name", None),
-                        "bot": message.author.bot,
-                    },
-                    "content": message.content,
-                    "created_at": message.created_at.isoformat(),
-                    "edited_at": message.edited_at.isoformat() if message.edited_at else None,
-                    "attachments": [a.url for a in message.attachments],
-                    "pinned": message.pinned,
-                })
+                messages.append(self._message_summary(message))
             return {
                 "success": True,
                 "guild_id": guild.id,
@@ -265,12 +291,24 @@ class DiscordAdminService:
             }
         return await self._run(op)
 
-    async def send_message(self, guild_id: int, channel_id: int, content: str) -> dict:
+    async def send_message(
+        self,
+        guild_id: int,
+        channel_id: int,
+        content: str,
+        mention_user_ids: list[int] | None = None,
+        mention_role_ids: list[int] | None = None,
+        reply_to_message_id: int | None = None,
+        quote_message_id: int | None = None,
+    ) -> dict:
         content = content.strip()
         if not content:
             return {"success": False, "message": "content must not be empty"}
-        if len(content) > 2000:
-            return {"success": False, "message": "content exceeds Discord's 2000-character message limit"}
+
+        user_ids = list(dict.fromkeys(mention_user_ids or []))
+        role_ids = list(dict.fromkeys(mention_role_ids or []))
+        if any(value <= 0 for value in user_ids + role_ids):
+            return {"success": False, "message": "mention IDs must be positive Discord snowflakes"}
 
         async def op() -> dict:
             guild, error = self._guild(guild_id)
@@ -279,16 +317,75 @@ class DiscordAdminService:
             channel = self._channel(guild, channel_id)
             if not isinstance(channel, (discord.TextChannel, discord.Thread)):
                 return {"success": False, "message": f"Channel {channel_id} is not a text channel"}
+
+            missing_users = []
+            for user_id in user_ids:
+                member = guild.get_member(user_id)
+                if member is None:
+                    try:
+                        member = await guild.fetch_member(user_id)
+                    except discord.NotFound:
+                        member = None
+                if member is None:
+                    missing_users.append(user_id)
+            if missing_users:
+                return {
+                    "success": False,
+                    "message": f"Mention user IDs are not members of guild {guild.id}: {missing_users}",
+                }
+            missing_roles = [role_id for role_id in role_ids if guild.get_role(role_id) is None]
+            if missing_roles:
+                return {
+                    "success": False,
+                    "message": f"Mention role IDs do not exist in guild {guild.id}: {missing_roles}",
+                }
+
+            final_content = content
+            if quote_message_id is not None:
+                quote = await channel.fetch_message(quote_message_id)
+                quote_text = quote.content.strip() or "[no text content]"
+                quote_lines = "\n".join(f"> {line}" for line in quote_text.splitlines())
+                quote_header = f"> **{getattr(quote.author, 'display_name', str(quote.author))}:**"
+                final_content = f"{quote_header}\n{quote_lines}\n\n{final_content}"
+
+            mention_prefix = " ".join(
+                [*(f"<@{user_id}>" for user_id in user_ids), *(f"<@&{role_id}>" for role_id in role_ids)]
+            )
+            if mention_prefix:
+                final_content = f"{mention_prefix} {final_content}"
+
+            if len(final_content) > 2000:
+                return {
+                    "success": False,
+                    "message": "final message exceeds Discord's 2000-character limit after mentions/quote formatting",
+                }
+
+            reference = None
+            if reply_to_message_id is not None:
+                reference = await channel.fetch_message(reply_to_message_id)
+
+            allowed_mentions = discord.AllowedMentions(
+                everyone=False,
+                users=[discord.Object(id=user_id) for user_id in user_ids] if user_ids else False,
+                roles=[discord.Object(id=role_id) for role_id in role_ids] if role_ids else False,
+                replied_user=False,
+            )
             message = await channel.send(
-                content,
-                allowed_mentions=discord.AllowedMentions.none(),
+                final_content,
+                allowed_mentions=allowed_mentions,
+                reference=reference,
+                mention_author=False,
             )
             return {
                 "success": True,
                 "guild_id": guild.id,
                 "channel_id": channel.id,
                 "message_id": message.id,
-                "content": content,
+                "content": final_content,
+                "mentioned_user_ids": user_ids,
+                "mentioned_role_ids": role_ids,
+                "reply_to_message_id": reply_to_message_id,
+                "quote_message_id": quote_message_id,
             }
         return await self._run(op)
 

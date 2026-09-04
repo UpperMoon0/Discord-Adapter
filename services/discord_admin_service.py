@@ -88,6 +88,7 @@ class DiscordAdminService:
             "name": member.name,
             "display_name": member.display_name,
             "global_name": member.global_name,
+            "nickname": member.nick,
             "bot": member.bot,
             "roles": [
                 {"id": role.id, "name": role.name}
@@ -151,6 +152,68 @@ class DiscordAdminService:
                 "channels": channels,
             }
         return await self._run(op)
+
+    async def list_members(
+        self,
+        guild_id: int,
+        limit: int = 50,
+        after_user_id: int | None = None,
+        include_bots: bool = True,
+    ) -> dict:
+        """List current guild members from Discord REST with a stable snowflake cursor.
+
+        This deliberately does not rely on ``guild.members`` because that cache can be
+        partial when the members intent is disabled or the process has only observed
+        part of the guild. ``after_user_id`` is the last raw member ID from the
+        previous page; callers should keep paging until ``next_after_user_id`` is null.
+        """
+        limit = max(1, min(limit, 100))
+
+        async def op() -> dict:
+            guild, error = self._guild(guild_id)
+            if error:
+                return error
+
+            if not self.bot_service.bot.intents.members:
+                return {
+                    "success": False,
+                    "code": "members_intent_disabled",
+                    "message": "Discord Server Members Intent is disabled in this adapter process",
+                    "hint": (
+                        "Enable Server Members Intent in the Discord Developer Portal and set "
+                        "DISCORD_MEMBERS_INTENT=true for the adapter deployment."
+                    ),
+                }
+
+            after = discord.Object(id=after_user_id) if after_user_id else None
+            fetched = [
+                member
+                async for member in guild.fetch_members(limit=limit, after=after)
+            ]
+            visible = fetched if include_bots else [member for member in fetched if not member.bot]
+            next_after_user_id = fetched[-1].id if len(fetched) == limit else None
+            return {
+                "success": True,
+                "guild_id": guild.id,
+                "guild_name": guild.name,
+                "members": [self._member_summary(member) for member in visible],
+                "count": len(visible),
+                "fetched_count": len(fetched),
+                "include_bots": include_bots,
+                "after_user_id": after_user_id,
+                "next_after_user_id": next_after_user_id,
+            }
+
+        result = await self._run(op)
+        if (
+            not result.get("success")
+            and "PrivilegedIntentsRequired" in result.get("message", "")
+        ):
+            result["hint"] = (
+                "Enable Server Members Intent in the Discord Developer Portal and set "
+                "DISCORD_MEMBERS_INTENT=true for the adapter deployment."
+            )
+        return result
 
     async def find_members(self, guild_id: int, query: str, limit: int = 20) -> dict:
         query = query.strip()

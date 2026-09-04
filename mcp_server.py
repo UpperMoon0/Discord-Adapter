@@ -168,7 +168,7 @@ async def discord_read_messages(
 
 @mcp_server.tool(
     title="List Discord roles",
-    description="List roles in one allowed Discord server so role IDs can be resolved safely before role operations.",
+    description="List guild roles for safe role-ID resolution.",
     annotations=READ_ONLY,
 )
 async def discord_list_roles(
@@ -421,9 +421,10 @@ async def mcp_health(_request):
 
 
 def build_mcp_asgi_app():
-    """Build the mountable Streamable HTTP ASGI app."""
+    """Build a stateless, finite-response Streamable HTTP ASGI app."""
     return mcp_server.streamable_http_app(
         json_response=True,
+        stateless_http=True,
         streamable_http_path="/",
         transport_security=_transport_security(),
     )

@@ -7,10 +7,16 @@ from mcp_server import mcp_server
 
 
 @pytest.mark.asyncio
-async def test_media_reader_is_bound_to_renderable_mcp_app_resource():
+async def test_media_tools_and_viewer_resource_are_advertised():
     async with Client(mcp_server) as client:
         tools_result = await client.list_tools()
         resources_result = await client.list_resources()
+
+    tool_names = {tool.name for tool in tools_result.tools}
+    assert {
+        "discord_list_message_media",
+        "discord_read_message_media",
+    }.issubset(tool_names)
 
     media_tool = next(
         tool for tool in tools_result.tools if tool.name == "discord_read_message_media"

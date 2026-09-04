@@ -72,10 +72,10 @@ This allows replies to inbound DMs without exposing arbitrary global user messag
 
 | Tool | Impact | Purpose |
 | --- | --- | --- |
-| `discord_list_message_media` | Read | Enumerate image/GIF/video attachments and visual embeds in one guild message and return stable `media_index` values. |
-| `discord_read_message_media` | Read | Return actual visual content for one `media_index`; static images may be returned directly, while GIFs/videos are sampled into representative frames. |
+| `discord_list_message_media` | Read | Enumerate image/GIF/video attachments and visual embeds when metadata or a non-default `media_index` must be selected. |
+| `discord_read_message_media` | Read | Return actual visual content for one `media_index`. The default `media_index=0` can be called directly; larger static images are normalized, while GIFs/videos are sampled into representative frames. |
 
-Typical guild-media flow: resolve the guild/channel/message, call `discord_list_message_media`, then call `discord_read_message_media` for the chosen index. Server-side fetches are size-bounded and remote embed hosts are allowlisted.
+Typical guild-media flow: resolve the guild/channel/message, then call `discord_read_message_media` directly with `media_index=0` for the first/default visual. Use `discord_list_message_media` only when metadata is needed or when selecting among multiple media items, then read the chosen index. Keeping the common first-media path to one MCP call avoids unnecessary chained tool/UI work. Server-side fetches are size-bounded, larger static images are normalized before return, and remote embed hosts are allowlisted.
 
 ## Member moderation and identity
 

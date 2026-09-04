@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import logging
 import os
 import tempfile
 from pathlib import Path
@@ -17,15 +16,12 @@ from mcp.types import ImageContent, TextContent
 
 from services.discord_admin_service import DiscordAdminService, discord_admin_service
 
-logger = logging.getLogger("lily-discord-adapter")
-
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 _ANIMATED_IMAGE_EXTENSIONS = {".gif", ".apng"}
 _VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v", ".mkv"}
 _DIRECT_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
+_DISCORD_MEDIA_HOST_SUFFIXES = (".discordapp.net", ".discordapp.com")
 _DEFAULT_ALLOWED_MEDIA_HOSTS = {
-    "cdn.discordapp.com",
-    "media.discordapp.net",
     "media.tenor.com",
     "c.tenor.com",
     "media.giphy.com",
@@ -50,7 +46,7 @@ class DiscordMediaService:
             "DISCORD_MEDIA_MAX_DOWNLOAD_BYTES", 32 * 1024 * 1024
         )
         self.max_direct_image_bytes = _positive_int_env(
-            "DISCORD_MEDIA_MAX_DIRECT_IMAGE_BYTES", 6 * 1024 * 1024
+            "DISCORD_MEDIA_MAX_DIRECT_IMAGE_BYTES", 1 * 1024 * 1024
         )
         self.ffmpeg_timeout_seconds = _positive_int_env(
             "DISCORD_MEDIA_FFMPEG_TIMEOUT_SECONDS", 20
@@ -88,10 +84,8 @@ class DiscordMediaService:
         if parsed.scheme != "https" or not parsed.hostname:
             return False
         host = parsed.hostname.lower().rstrip(".")
-        return (
-            host in self.allowed_media_hosts
-            or host.endswith(".discordapp.net")
-            or host.endswith(".discordapp.com")
+        return host in self.allowed_media_hosts or any(
+            host.endswith(suffix) for suffix in _DISCORD_MEDIA_HOST_SUFFIXES
         )
 
     def _embed_metadata(self, embed: discord.Embed, embed_index: int) -> list[dict]:
@@ -262,12 +256,19 @@ class DiscordMediaService:
             detail = stderr.decode("utf-8", errors="replace").strip()[-500:]
             raise ValueError(f"ffmpeg could not extract media frame: {detail or 'unknown error'}")
 
-    async def _frame_content(self, data: bytes, suffix: str, max_frames: int) -> list[ImageContent]:
+    async def _frame_content(
+        self,
+        data: bytes,
+        suffix: str,
+        max_frames: int,
+        *,
+        sample_duration: bool = True,
+    ) -> list[ImageContent]:
         with tempfile.TemporaryDirectory(prefix="discord-media-") as temp_dir:
             temp = Path(temp_dir)
             source = temp / f"source{suffix or '.bin'}"
             source.write_bytes(data)
-            duration = await self._probe_duration(source)
+            duration = await self._probe_duration(source) if sample_duration else None
             if duration:
                 timestamps = [
                     duration * (index + 0.5) / max_frames
@@ -408,7 +409,14 @@ class DiscordMediaService:
 
             if kind in {"image", "animated_image", "video"}:
                 suffix = Path(filename or "").suffix.lower()
-                result.extend(await self._frame_content(data, suffix, max_frames if kind != "image" else 1))
+                result.extend(
+                    await self._frame_content(
+                        data,
+                        suffix,
+                        max_frames if kind != "image" else 1,
+                        sample_duration=kind != "image",
+                    )
+                )
                 return result
 
             result[0] = TextContent(

@@ -42,7 +42,7 @@ Do not assume those surfaces share authentication. MCP OAuth and the Redis guild
 - Optional Discord **Server Members Intent** for reliable name-based member search
 - Redis 7+ for the MCP guild policy
 - Access to Lily-Core / Consul when chat integration is enabled
-- `ffmpeg`/`ffprobe` for GIF/video MCP inspection and voice/media functionality; the Docker image installs `ffmpeg`
+- `ffmpeg`/`ffprobe` for large-image normalization, GIF/video MCP inspection, and voice/media functionality; the Docker image installs `ffmpeg`
 
 ## Quick start
 
@@ -176,7 +176,7 @@ The MCP surface covers:
 
 Messages sent through MCP suppress Discord mentions by default. `discord_send_message` can explicitly ping selected users or roles with `mention_user_ids` / `mention_role_ids`, reply with `reply_to_message_id`, or quote with `quote_message_id`. `@everyone` and `@here` are never enabled. Replies do not automatically ping the referenced author unless that user is explicitly selected.
 
-`discord_read_messages` returns jump URLs and reply/reference metadata. Use `discord_list_message_media` followed by `discord_read_message_media` to inspect visual attachments or embeds. GIFs and videos are sampled into representative frames.
+`discord_read_messages` returns jump URLs and reply/reference metadata. For the first/default visual attachment or embed, call `discord_read_message_media` directly with `media_index=0`. Use `discord_list_message_media` only when metadata is needed or when selecting among multiple media items. GIFs and videos are sampled into representative frames, and larger static images are normalized before return.
 
 MCP does not bypass Discord permissions or role hierarchy. Grant only the Discord permissions the bot needs rather than `Administrator` where practical.
 
@@ -265,4 +265,4 @@ Legacy HTTP routes are outside those four MCP layers and need deployment-level n
 
 Source CI builds the Docker image, runs Python syntax compilation, executes the pytest suite, starts a Redis sidecar, launches the adapter container with `REDIS_URL`, and requires `/health` to report `mcp_policy_store_ready=true`.
 
-Tests cover policy bootstrap and fail-closed behavior, Redis authority, runtime mutation/reload, atomic snapshot preservation, policy-write gating, audit persistence, the complete 60-tool MCP surface, rich message arguments, destructive annotations, extended Discord operations, media inspection, OAuth, addon lifecycle, and message-controller behavior.
+Tests cover policy bootstrap and fail-closed behavior, Redis authority, runtime mutation/reload, atomic snapshot preservation, policy-write gating, audit persistence, the complete 52-tool MCP surface, rich message arguments, destructive annotations, extended Discord operations, media inspection, OAuth, addon lifecycle, and message-controller behavior.

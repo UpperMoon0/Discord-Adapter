@@ -183,7 +183,7 @@ async def discord_list_roles(
     annotations=READ_ONLY,
 )
 async def discord_get_audit_log(
-    guild_id: Annotated[int, Field(ge=1, description="Discord guild/server ID")],
+    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
     limit: Annotated[int, Field(ge=1, le=100)] = 25,
 ) -> dict:
     return await discord_admin_service.get_audit_log(guild_id, limit)

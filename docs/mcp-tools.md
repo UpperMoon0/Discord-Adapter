@@ -50,17 +50,17 @@ The annotation is guidance for MCP hosts; it is not a replacement for authorizat
 
 | Tool | Impact | Purpose |
 | --- | --- | --- |
-| `discord_list_message_media` | Read | Enumerate image/GIF/video attachments and visual embeds in one message and return stable `media_index` values. |
-| `discord_read_message_media` | Read | Return actual visual content for one `media_index`; static images may be returned directly, while GIFs/videos are sampled into representative frames. |
+| `discord_list_message_media` | Read | Enumerate image/GIF/video attachments and visual embeds when metadata or a non-default `media_index` must be selected. |
+| `discord_read_message_media` | Read | Return actual visual content for one `media_index`. The default `media_index=0` can be called directly; larger static images are normalized, while GIFs/videos are sampled into representative frames. |
 
 Typical flow:
 
 1. Resolve the guild/channel/message with normal discovery/read tools.
-2. Call `discord_list_message_media`.
-3. Pick a returned `media_index`.
-4. Call `discord_read_message_media`, optionally setting `max_frames` from 1 to 6.
+2. For the first/default visual, call `discord_read_message_media` directly with `media_index=0`. Do not list first.
+3. Use `discord_list_message_media` only when metadata is needed or when selecting among multiple media items, then call `discord_read_message_media` with the chosen index.
+4. For GIF/video inspection, optionally set `max_frames` from 1 to 6.
 
-Server-side fetches are size-bounded and remote embed hosts are allowlisted. See [configuration](configuration.md#discord-message-media-inspection).
+Keeping the common first-media path to one MCP tool call also avoids unnecessary chained tool/UI work in clients. Server-side fetches are size-bounded, large static image results are normalized before return, and remote embed hosts are allowlisted. See [configuration](configuration.md#discord-message-media-inspection).
 
 ## Member moderation and identity
 

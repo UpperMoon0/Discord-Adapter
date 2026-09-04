@@ -15,7 +15,7 @@ Do not assume those surfaces share authentication. MCP OAuth and the Redis guild
 - Discord bot integration with Lily-Core
 - FastAPI health/readiness endpoints
 - Streamable HTTP MCP endpoint at `/mcp/`
-- 60 semantic Discord administration MCP tools
+- 61 semantic Discord administration MCP tools
 - Self-hosted OAuth 2.0 authorization-code + PKCE flow
 - Redis-backed runtime guild access policy with an immutable in-memory snapshot
 - One-time migration/bootstrap from `DISCORD_ADMIN_GUILD_IDS`

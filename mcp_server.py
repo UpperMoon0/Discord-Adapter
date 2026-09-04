@@ -109,6 +109,26 @@ async def discord_list_channels(
 
 
 @mcp_server.tool(
+    title="List Discord members",
+    description=(
+        "List current members in one allowed Discord server using Discord's REST member listing, "
+        "with pagination and optional bot filtering. Use next_after_user_id until it is null."
+    ),
+    annotations=READ_ONLY,
+)
+async def discord_list_members(
+    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
+    limit: Annotated[int, Field(ge=1, le=100, description="Maximum raw members to fetch in this page")] = 50,
+    after_user_id: Annotated[
+        int | None,
+        Field(description="Cursor from the previous page's next_after_user_id; omit for the first page"),
+    ] = None,
+    include_bots: Annotated[bool, Field(description="Whether bot accounts are included in members")] = True,
+) -> dict:
+    return await discord_admin_service.list_members(guild_id, limit, after_user_id, include_bots)
+
+
+@mcp_server.tool(
     title="Find Discord members",
     description="Search members in one allowed Discord server by username, display name, global name, or exact user ID.",
     annotations=READ_ONLY,

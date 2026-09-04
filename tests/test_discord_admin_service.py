@@ -15,6 +15,7 @@ def _service_with_bot(guilds=None):
     bot.is_closed.return_value = False
     bot.is_ready.return_value = True
     bot.guilds = guilds or []
+    bot.intents = SimpleNamespace(members=True)
     service.bot_service = SimpleNamespace(bot=bot, bot_loop=None)
     return service, bot
 
@@ -196,3 +197,79 @@ async def test_disallowed_guild_cannot_be_mutated():
 
     assert result["success"] is False
     assert "not enabled" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_list_members_uses_rest_pagination_and_exposes_nickname():
+    service, bot = _service_with_bot()
+    guild = MagicMock(); guild.id = 123; guild.name = "Test"
+    bot.get_guild.return_value = guild
+
+    role_default = SimpleNamespace(id=1, name="@everyone", is_default=lambda: True)
+    role_member = SimpleNamespace(id=2, name="Member", is_default=lambda: False)
+    members = [
+        SimpleNamespace(
+            id=10, name="one", display_name="One", global_name="One", nick="Guild One",
+            bot=False, roles=[role_default, role_member], timed_out_until=None,
+        ),
+        SimpleNamespace(
+            id=20, name="bot", display_name="Bot", global_name=None, nick=None,
+            bot=True, roles=[role_default], timed_out_until=None,
+        ),
+    ]
+
+    async def fetch_members(*, limit, after=None):
+        assert limit == 2
+        assert after is None
+        for member in members:
+            yield member
+
+    guild.fetch_members = fetch_members
+
+    with _runtime_policy(123):
+        result = await service.list_members(123, limit=2, include_bots=False)
+
+    assert result["success"] is True
+    assert result["count"] == 1
+    assert result["fetched_count"] == 2
+    assert result["next_after_user_id"] == 20
+    assert result["members"][0]["nickname"] == "Guild One"
+    assert result["members"][0]["roles"] == [{"id": 2, "name": "Member"}]
+
+
+@pytest.mark.asyncio
+async def test_list_members_passes_after_cursor_to_discord():
+    service, bot = _service_with_bot()
+    guild = MagicMock(); guild.id = 123; guild.name = "Test"
+    bot.get_guild.return_value = guild
+
+    async def fetch_members(*, limit, after=None):
+        assert limit == 50
+        assert after is not None
+        assert after.id == 987654321
+        if False:
+            yield None
+
+    guild.fetch_members = fetch_members
+
+    with _runtime_policy(123):
+        result = await service.list_members(123, after_user_id=987654321)
+
+    assert result["success"] is True
+    assert result["members"] == []
+    assert result["next_after_user_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_list_members_fails_clearly_when_members_intent_is_disabled():
+    service, bot = _service_with_bot()
+    bot.intents.members = False
+    guild = MagicMock(); guild.id = 123; guild.name = "Test"
+    bot.get_guild.return_value = guild
+
+    with _runtime_policy(123):
+        result = await service.list_members(123)
+
+    assert result["success"] is False
+    assert result["code"] == "members_intent_disabled"
+    assert "DISCORD_MEMBERS_INTENT=true" in result["hint"]

@@ -11,11 +11,11 @@ from services.music_service import MusicService, _validate_stream_url, validate_
         "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         "https://youtu.be/dQw4w9WgXcQ",
         "https://youtube.com/shorts/dQw4w9WgXcQ",
-        "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://music.youtube.com/watch?v=dQw4w9WgXcQ&list=PLATTACKER",
     ],
 )
-def test_validate_youtube_url_accepts_direct_video_urls(url):
-    assert validate_youtube_url(url) == url
+def test_validate_youtube_url_accepts_and_canonicalizes_direct_video_urls(url):
+    assert validate_youtube_url(url) == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 
 @pytest.mark.parametrize(

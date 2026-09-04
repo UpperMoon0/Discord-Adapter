@@ -44,8 +44,16 @@ def _valid_video_id(value: str | None) -> bool:
     return bool(value and _VIDEO_ID_RE.fullmatch(value))
 
 
+def _canonical_watch_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
 def validate_youtube_url(url: str) -> str:
-    """Accept only direct HTTPS YouTube video URLs."""
+    """Accept only direct HTTPS YouTube video URLs and canonicalize them.
+
+    The canonical return value deliberately drops every user-supplied query
+    parameter except the validated video ID before yt-dlp sees the request.
+    """
     value = url.strip()
     try:
         parsed = urlsplit(value)
@@ -64,19 +72,19 @@ def validate_youtube_url(url: str) -> str:
         video_id = path.lstrip("/")
         if "/" in video_id or not _valid_video_id(video_id):
             raise ValueError("Invalid youtu.be video URL")
-        return value
+        return _canonical_watch_url(video_id)
 
     if path == "/watch":
         video_ids = parse_qs(parsed.query, keep_blank_values=False).get("v", [])
         if len(video_ids) != 1 or not _valid_video_id(video_ids[0]):
             raise ValueError("YouTube watch URL must contain one valid video ID")
-        return value
+        return _canonical_watch_url(video_ids[0])
 
     for prefix in ("/shorts/", "/live/", "/embed/"):
         if path.startswith(prefix):
             video_id = path[len(prefix):]
             if "/" not in video_id and _valid_video_id(video_id):
-                return value
+                return _canonical_watch_url(video_id)
 
     raise ValueError("Only direct YouTube video URLs are allowed")
 

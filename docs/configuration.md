@@ -7,7 +7,7 @@ This document describes the runtime environment variables read by Discord Adapte
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DISCORD_BOT_TOKEN` | unset | Enables the Discord gateway bot. Without it, the process stays alive in HTTP/MCP-only mode. |
-| `DISCORD_MEMBERS_INTENT` | `false` | Enables Discord Server Members Intent in the client. Also enable the privileged intent in the Discord Developer Portal. Required for exhaustive `discord_list_members` paging and useful for reliable name-based member search. |
+| `DISCORD_MEMBERS_INTENT` | `false` | Enables Discord Server Members Intent in the client. Also enable the privileged intent in the Discord Developer Portal. Required for exhaustive `discord_query_members` `mode=list` paging and useful for reliable name-based member search. |
 | `DISCORD_ADDONS` | empty | Comma-separated `discord_adapter.addons` entry-point IDs to load. Empty disables addons. `*` intentionally enables every installed addon. |
 | `DISCORD_ADDON_STRICT` | `false` | If true, a missing or failed configured addon prevents bot startup. Otherwise failures are isolated and reported in health state. |
 
@@ -21,7 +21,8 @@ Boolean environment settings accept conventional truthy values such as `1`, `tru
 | --- | --- | --- |
 | `REDIS_URL` | unset | Redis connection used by the authoritative MCP guild policy. If missing or unavailable, policy readiness degrades and guild access fails closed. The template uses `redis://redis:6379/0` for the normal container network. |
 | `DISCORD_ADMIN_GUILD_IDS` | empty | One-time bootstrap only when Redis has no policy. Comma-separated guild IDs; `*` intentionally seeds all-guild access. Redis is authoritative afterward. |
-| `MCP_POLICY_WRITES_ENABLED` | `false` | Deployment-level gate for `discord_policy_allow_guild` and `discord_policy_remove_guild`. |
+| `DISCORD_MCP_DM_USER_IDS` | empty | Optional comma-separated user IDs that MCP may DM before an inbound DM conversation exists. Existing DM conversations do not need to be listed here. |
+| `MCP_POLICY_WRITES_ENABLED` | `false` | Deployment-level gate for `discord_set_guild_access`. |
 | `DISCORD_POLICY_REDIS_KEY` | `lily:discord-adapter:access-policy:v1` | Redis key holding the authoritative policy document. |
 | `DISCORD_POLICY_AUDIT_REDIS_KEY` | `lily:discord-adapter:access-policy:audit:v1` | Redis list key holding bounded mutation audit records. |
 | `DISCORD_POLICY_AUDIT_MAX_ENTRIES` | `100` | Requested maximum retained audit entries. The service bounds unsafe values internally. |
@@ -91,6 +92,7 @@ DISCORD_ADDON_STRICT=true
 
 REDIS_URL=redis://redis:6379/0
 DISCORD_ADMIN_GUILD_IDS=123456789012345678
+DISCORD_MCP_DM_USER_IDS=
 MCP_POLICY_WRITES_ENABLED=false
 DISCORD_POLICY_REDIS_KEY=lily:discord-adapter:access-policy:v1
 DISCORD_POLICY_AUDIT_REDIS_KEY=lily:discord-adapter:access-policy:audit:v1

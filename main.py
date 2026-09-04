@@ -1,7 +1,8 @@
-"""
-Lily-Discord-Adapter
-Discord bot adapter for Lily-Core
-Handles Discord messages and communicates with Lily-Core via HTTP
+"""Lily Discord Adapter.
+
+Public HTTP exposure is intentionally limited to health/readiness, OAuth, and
+OAuth-protected MCP. Legacy bot-control and cookie-management routers are not
+mounted on the internet-facing application.
 """
 
 import asyncio
@@ -16,21 +17,15 @@ import uvicorn
 from discord.ext import commands
 from fastapi import FastAPI
 
-sys.path.insert(0, '/app/Lily-Discord-Adapter')
+sys.path.insert(0, "/app/Lily-Discord-Adapter")
 
-from controllers.bot_controller import bot_router
 from controllers.command_controller import CommandController
-from controllers.cookies_controller import cookies_router, ws_cookies_router
 from controllers.message_controller import MessageController
 from mcp_server import build_mcp_asgi_app, mcp_server
 from services.access_policy_service import access_policy_service
 from services.addon_manager import AddonManager
 from services.bot_service import bot_service
-from services.concurrency_manager import (
-    ConcurrencyManager,
-    RateLimitConfig,
-    UserRateLimiter,
-)
+from services.concurrency_manager import ConcurrencyManager, RateLimitConfig, UserRateLimiter
 from services.lily_core_service import LilyCoreService
 from services.music_service import MusicService
 from services.session_service import SessionService
@@ -40,16 +35,14 @@ from utils.service_discovery import ServiceDiscovery
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("lily-discord-adapter")
 
 sd = None
 lily_core_available = False
-
 bot_enabled = True
 bot_startup_attempted = False
-
 session_service = None
 lily_core_service = None
 music_service = None
@@ -61,7 +54,6 @@ BOT = None
 
 
 def env_flag(name: str, default: bool = False) -> bool:
-    """Parse a conventional boolean environment variable."""
     raw = os.getenv(name)
     if raw is None:
         return default
@@ -69,14 +61,12 @@ def env_flag(name: str, default: bool = False) -> bool:
 
 
 def get_lily_core_http_url():
-    """Get Lily-Core HTTP URL from Consul."""
     if sd:
         return sd.get_service_url("lily-core", "http")
     return None
 
 
 def get_addon_status() -> dict:
-    """Return addon state without exposing addon internals."""
     manager = getattr(BOT, "addon_manager", None) if BOT else None
     if manager:
         return manager.status()
@@ -91,7 +81,7 @@ def get_addon_status() -> dict:
 
 
 async def process_message_task(message_data: dict):
-    """Worker task to process messages from queue."""
+    """Process messages already admitted by MessageController's trust policy."""
     user_id = message_data.get("user_id")
     content = message_data.get("text")
     username = message_data.get("username")
@@ -108,12 +98,11 @@ async def process_message_task(message_data: dict):
     if response_text:
         await send_message(channel, response_text)
     else:
-        logger.error("Failed to get response from lily-core for user %s", user_id)
+        logger.error("Failed to get response from lily-core for scoped user %s", user_id)
         await channel.send("I'm having trouble connecting to my brain right now. Please try again later.")
 
 
 async def initialize_services():
-    """Initialize all services once."""
     global sd
     global session_service
     global lily_core_service
@@ -152,31 +141,30 @@ async def initialize_services():
     )
 
     lily_core_service = LilyCoreService(get_lily_core_http_url)
-
     http_url = await lily_core_service.get_http_url()
     ws_url = None
     if http_url:
         lily_core_available = True
-        logger.info("lily-core HTTP URL: %s", http_url)
         if sd:
             ws_url = sd.get_service_url("lily-core", "ws")
-            logger.info("lily-core WS URL: %s", ws_url)
     else:
         lily_core_available = False
-        logger.warning("lily-core not found in Consul. Chat features will be disabled.")
+        logger.warning("lily-core not found in Consul; trusted Discord chat will be unavailable")
 
     bot_service.set_lily_core_status(lily_core_available, http_url, ws_url)
-
     session_service = SessionService()
     music_service = MusicService()
 
+    trusted_guild_count = len(
+        [value for value in os.getenv("DISCORD_CHAT_GUILD_IDS", "").split(",") if value.strip()]
+    )
     logger.info(
-        "Concurrency config: max_concurrent=%s, queue_size=%s, workers=%s",
+        "Concurrency config: max_concurrent=%s queue_size=%s workers=%s trusted_chat_guilds=%s",
         max_concurrent,
         queue_size,
         num_workers,
+        trusted_guild_count,
     )
-    logger.info("lily-core available: %s", lily_core_available)
 
 
 class DiscordAdapterBot(commands.Bot):
@@ -191,27 +179,24 @@ class DiscordAdapterBot(commands.Bot):
 
 
 def create_discord_bot():
-    """Create and configure a new Discord bot instance."""
     global message_controller, command_controller
 
     intents = discord.Intents.default()
     intents.message_content = True
     intents.voice_states = True
-    # Member name search requires the privileged Server Members Intent. Keep it
-    # opt-in so an existing deployment is not rejected by the Discord gateway.
     intents.members = env_flag("DISCORD_MEMBERS_INTENT", False)
 
     addon_manager = AddonManager.from_env()
     bot = DiscordAdapterBot(
-        command_prefix='!',
+        command_prefix="!",
         intents=intents,
-        description='Lily Discord Adapter - Connects Discord to Lily-Core',
+        description="Lily Discord Adapter - Connects Discord to Lily-Core",
         addon_manager=addon_manager,
     )
 
-    # Register built-in handlers once per bot instance. Addons are registered in
-    # setup_hook before the gateway becomes ready, and all commands are synced
-    # together from on_ready.
+    # This bridge uses DISCORD_CHAT_GUILD_IDS, which is separate from MCP's
+    # Redis policy. Full MCP administration remains available for every MCP-
+    # allowed guild even when that guild cannot send chat into Lily-Core.
     message_controller = MessageController(
         bot,
         session_service,
@@ -228,9 +213,7 @@ def create_discord_bot():
 
     @bot.event
     async def on_ready():
-        """Bot is ready and connected to Discord."""
         logger.info("Bot logged in as %s (%s)", bot.user.name, bot.user.id)
-
         try:
             synced = await bot.tree.sync()
             logger.info("Synced %s command(s)", len(synced))
@@ -243,16 +226,14 @@ def create_discord_bot():
             bot_startup_attempted,
             asyncio.get_running_loop(),
         )
-
         logger.info("Discord addons: %s", addon_manager.status())
-        logger.info("Lily-Discord-Adapter is ready!")
+        logger.info("Lily-Discord-Adapter is ready")
 
     return bot
 
 
 @asynccontextmanager
 async def api_lifespan(_app: FastAPI):
-    """Initialize policy storage before MCP sessions and close it on shutdown."""
     await access_policy_service.initialize()
     try:
         async with mcp_server.session_manager.run():
@@ -263,81 +244,65 @@ async def api_lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="Lily-Discord-Adapter",
-    description="Discord adapter, health endpoints, and guild-scoped MCP administration",
+    description="Health endpoints and authenticated guild-scoped MCP administration",
     lifespan=api_lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
-app.include_router(bot_router)
-app.include_router(cookies_router)
-app.include_router(ws_cookies_router)
+# Legacy /api/bot, /api/cookies, and /ws/cookies are deliberately not mounted.
+# Discord administration belongs to authenticated MCP; cookies are host-managed
+# secrets rather than an HTTP API.
 
-# OAuth is the preferred authentication mode. If it is not configured, the
-# legacy MCP_BEARER_TOKEN remains available for compatibility. With neither
-# configured, /mcp/ fails closed instead of becoming public.
 mcp_oauth_manager = MCPOAuthManager.from_env()
 if mcp_oauth_manager:
     app.include_router(mcp_oauth_manager.router)
 
-# Streamable HTTP MCP endpoint. Use /mcp/ (with the trailing slash).
 mcp_asgi_app = MCPAuth(build_mcp_asgi_app(), mcp_oauth_manager)
 app.mount("/mcp", mcp_asgi_app)
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Public liveness without guild IDs, internal URLs, or secret state."""
     global bot_enabled, bot_startup_attempted
     stats = concurrency_manager.stats if concurrency_manager else {}
     health_info = bot_service.get_health_info(concurrency_manager)
     policy = access_policy_service.status()
 
-    bot_ready = False
-    if BOT and not BOT.is_closed():
-        bot_ready = BOT.is_ready()
-
+    bot_ready = bool(BOT and not BOT.is_closed() and BOT.is_ready())
     return {
         "status": "healthy" if policy["store_ready"] else "degraded",
         "service": "lily-discord-adapter",
         "bot_ready": bot_ready,
         "bot_enabled": health_info.get("bot_enabled", bot_enabled),
-        "bot_startup_attempted": health_info.get(
-            "bot_startup_attempted",
-            bot_startup_attempted,
-        ),
-        "lily_core_available": lily_core_available,
-        "discord_enabled": bool(os.getenv("DISCORD_BOT_TOKEN")),
+        "bot_startup_attempted": health_info.get("bot_startup_attempted", bot_startup_attempted),
         "discord_addons": get_addon_status(),
         "mcp_enabled": True,
         "mcp_auth_mode": mcp_asgi_app.mode,
         "mcp_guild_policy_configured": policy["configured"],
         "mcp_policy_store_ready": policy["store_ready"],
-        "mcp_guild_policy": policy,
+        "mcp_policy_revision": policy["revision"],
         "concurrency": health_info.get("concurrency", stats),
     }
 
 
 @app.get("/ready")
 async def readiness_check():
-    """Readiness check endpoint."""
     global bot_enabled, bot_startup_attempted
     stats = concurrency_manager.stats if concurrency_manager else {}
     health_info = bot_service.get_health_info(concurrency_manager)
     policy = access_policy_service.status()
-
-    bot_ready = False
-    if BOT and not BOT.is_closed():
-        bot_ready = BOT.is_ready()
+    bot_ready = bool(BOT and not BOT.is_closed() and BOT.is_ready())
 
     return {
         "status": "ready" if policy["store_ready"] else "degraded",
         "bot_ready": bot_ready,
         "bot_enabled": health_info.get("bot_enabled", bot_enabled),
-        "bot_startup_attempted": health_info.get(
-            "bot_startup_attempted",
-            bot_startup_attempted,
-        ),
-        "lily_core_available": lily_core_available,
+        "bot_startup_attempted": health_info.get("bot_startup_attempted", bot_startup_attempted),
         "discord_addons": get_addon_status(),
+        "mcp_auth_mode": mcp_asgi_app.mode,
         "mcp_policy_store_ready": policy["store_ready"],
         "mcp_guild_policy_configured": policy["configured"],
         "concurrency": health_info.get("concurrency", stats),
@@ -345,41 +310,31 @@ async def readiness_check():
 
 
 def run_health_server():
-    """Run FastAPI + MCP on a separate thread."""
     port = int(os.getenv("PORT", "8004"))
+    # 0.0.0.0 is required inside the container for Traefik. Production binds
+    # the host port to loopback and uses a dedicated proxy network.
     uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 async def monitor_lily_core():
-    """Background task to monitor Lily-Core availability."""
     global lily_core_available
     logger.info("Starting lily-core monitor task")
     while True:
         try:
             if lily_core_service:
                 is_available = await lily_core_service.is_available()
-
                 if is_available != lily_core_available:
                     lily_core_available = is_available
-
                     http_url = None
                     ws_url = None
                     if is_available and sd:
                         http_url = sd.get_service_url("lily-core", "http")
                         ws_url = sd.get_service_url("lily-core", "ws")
-                        logger.info(
-                            "lily-core discovered/connected at: %s (WS: %s)",
-                            http_url,
-                            ws_url,
-                        )
                     else:
-                        logger.warning("lily-core lost connection or not found.")
-
+                        logger.warning("lily-core lost connection or not found")
                     bot_service.set_lily_core_status(is_available, http_url, ws_url)
-
         except Exception as exc:
-            logger.error("Error in monitor_lily_core: %s", exc)
-
+            logger.error("Error in monitor_lily_core: %s", type(exc).__name__)
         await asyncio.sleep(10)
 
 
@@ -390,7 +345,6 @@ async def _shutdown_bot_addons(bot) -> None:
 
 
 async def shutdown():
-    """Graceful shutdown."""
     global concurrency_manager, session_service, BOT
     if concurrency_manager:
         await concurrency_manager.shutdown()
@@ -405,22 +359,15 @@ async def shutdown():
 
 
 async def main():
-    """Main entry point."""
     global bot_enabled, bot_startup_attempted, BOT
 
     bot_token = os.getenv("DISCORD_BOT_TOKEN")
-
     loop = asyncio.get_running_loop()
 
     await initialize_services()
     asyncio.create_task(monitor_lily_core())
 
-    bot_service.set_bot_references(
-        None,
-        bot_enabled,
-        bot_startup_attempted,
-        loop,
-    )
+    bot_service.set_bot_references(None, bot_enabled, bot_startup_attempted, loop)
 
     import threading
 
@@ -428,49 +375,34 @@ async def main():
     health_thread.start()
 
     if not os.getenv("REDIS_URL", "").strip():
-        logger.warning(
-            "REDIS_URL is not configured; the Discord MCP access policy will fail closed."
-        )
+        logger.warning("REDIS_URL is not configured; Discord MCP policy will fail closed")
 
     if mcp_asgi_app.mode == "unconfigured":
-        logger.warning(
-            "MCP authentication is not configured; /mcp/ will fail closed with HTTP 503. "
-            "Configure MCP OAuth or the legacy MCP_BEARER_TOKEN before connecting a client."
-        )
+        logger.warning("MCP authentication is not configured; /mcp/ will fail closed with HTTP 503")
     elif mcp_asgi_app.mode == "bearer":
-        logger.warning(
-            "MCP is using legacy static bearer authentication. OAuth is recommended for "
-            "ChatGPT-facing deployments."
-        )
+        logger.warning("MCP is using legacy static bearer authentication; OAuth is recommended")
     else:
-        logger.info("MCP OAuth authentication enabled for %s", mcp_oauth_manager.config.resource)
+        logger.info("MCP OAuth authentication enabled")
 
     if not bot_token:
         logger.warning("DISCORD_BOT_TOKEN not set - Discord bot features disabled")
         bot_enabled = False
         bot_service.set_bot_references(None, bot_enabled, bot_startup_attempted, loop)
-        logger.info("Lily-Discord-Adapter running in HTTP mode (health/MCP endpoints active)")
         while True:
             await asyncio.sleep(3600)
 
-    logger.info("Starting Lily-Discord-Adapter...")
+    logger.info("Starting Lily-Discord-Adapter")
     bot_startup_attempted = True
 
     while True:
-        status = bot_service.get_status()
-        current_enabled = status.get("bot_enabled", False)
-
+        current_enabled = bot_service.get_status().get("bot_enabled", False)
         if current_enabled:
             try:
-                logger.info("Bot enabled. Starting execution...")
-
                 BOT = create_discord_bot()
                 bot_service.set_bot_references(BOT, True, True, loop)
-
                 await BOT.start(bot_token)
-                logger.info("Bot execution finished (stopped).")
             except Exception as exc:
-                logger.error("Bot execution error: %s", exc)
+                logger.error("Bot execution error: %s", type(exc).__name__)
                 await asyncio.sleep(5)
             finally:
                 if BOT:
@@ -486,7 +418,7 @@ async def main():
                 BOT = None
         else:
             if int(time.time()) % 60 == 0:
-                logger.info("Bot is disabled. Waiting for enable signal...")
+                logger.info("Bot is disabled")
             await asyncio.sleep(1)
 
 

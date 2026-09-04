@@ -523,3 +523,53 @@ async def test_pin_unpin_and_filtered_purge():
     wrong_user = SimpleNamespace(author=SimpleNamespace(id=100), content="contains spam here")
     assert kwargs["check"](matching) is True
     assert kwargs["check"](wrong_user) is False
+
+
+@pytest.mark.asyncio
+async def test_configure_channel_consolidates_text_and_move_updates():
+    service, bot = _service_with_bot()
+    guild = _guild(bot)
+
+    class Category:
+        id = 77
+
+    class TextChannel:
+        id = 55
+        name = "general"
+        type = discord.ChannelType.text
+        position = 1
+        category_id = None
+
+        def __init__(self):
+            self.edit = AsyncMock(return_value=self)
+
+    category = Category()
+    channel = TextChannel()
+    guild.get_channel.side_effect = lambda cid: channel if cid == 55 else category if cid == 77 else None
+
+    with (
+        _allowed(),
+        patch("services.extended_discord_admin_service.discord.TextChannel", new=TextChannel),
+        patch("services.extended_discord_admin_service.discord.CategoryChannel", new=Category),
+    ):
+        result = await service.configure_channel(
+            GUILD_ID,
+            55,
+            name="ops",
+            topic="operations",
+            slowmode_delay=5,
+            position=3,
+            category_id=77,
+            sync_permissions=True,
+            reason="compact update",
+        )
+
+    assert result["success"] is True
+    kwargs = channel.edit.await_args.kwargs
+    assert kwargs["name"] == "ops"
+    assert kwargs["topic"] == "operations"
+    assert kwargs["slowmode_delay"] == 5
+    assert kwargs["position"] == 3
+    assert kwargs["category"] is category
+    assert kwargs["sync_permissions"] is True
+    assert kwargs["reason"] == "compact update"

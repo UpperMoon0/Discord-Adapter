@@ -32,18 +32,20 @@ _YOUTUBE_HOSTS = {
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
 
 
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
 def _valid_video_id(value: str | None) -> bool:
     return bool(value and _VIDEO_ID_RE.fullmatch(value))
 
 
 def validate_youtube_url(url: str) -> str:
-    """Accept only direct HTTPS YouTube video URLs.
-
-    yt-dlp is a powerful network client. Treating arbitrary Discord input as a
-    generic yt-dlp URL creates an SSRF primitive, so only known video URL forms
-    are accepted before the subprocess is started.
-    """
-
+    """Accept only direct HTTPS YouTube video URLs."""
     value = url.strip()
     try:
         parsed = urlsplit(value)
@@ -81,7 +83,6 @@ def validate_youtube_url(url: str) -> str:
 
 def _validate_stream_url(url: str) -> str:
     """Reject unexpected extractor output before handing it to FFmpeg."""
-
     try:
         parsed = urlsplit(url)
         port = parsed.port
@@ -143,8 +144,10 @@ async def run_yt_dlp(url: str):
         raise ValueError("YouTube lookup timed out") from exc
 
     if process.returncode != 0:
-        # Do not return yt-dlp's verbose error body to an untrusted Discord user.
-        logger.warning("yt-dlp rejected a validated YouTube URL: %s", stderr.decode(errors="replace")[-500:])
+        logger.warning(
+            "yt-dlp rejected a validated YouTube URL: %s",
+            stderr.decode(errors="replace")[-500:],
+        )
         raise ValueError("YouTube lookup failed")
 
     if len(stdout) > 4 * 1024 * 1024:
@@ -183,6 +186,7 @@ class MusicService:
     def __init__(self):
         self.queues: Dict[int, deque] = {}
         self.is_playing: Dict[int, bool] = {}
+        self.max_queue_per_guild = _positive_int_env("MUSIC_QUEUE_MAX_PER_GUILD", 25)
 
     def get_queue(self, guild_id: int) -> deque:
         if guild_id not in self.queues:
@@ -208,6 +212,10 @@ class MusicService:
             return False
 
         queue = self.get_queue(ctx.guild.id)
+        if len(queue) >= self.max_queue_per_guild:
+            await ctx.send("The music queue is full. Please wait for a slot to open.")
+            return False
+
         queue.append((safe_url, ctx))
         await ctx.send("Added YouTube video to queue.")
         if not self.is_playing.get(ctx.guild.id, False):

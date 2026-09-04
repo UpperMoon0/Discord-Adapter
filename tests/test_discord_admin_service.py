@@ -167,6 +167,26 @@ async def test_send_message_can_quote_message_content():
 
 
 @pytest.mark.asyncio
+async def test_delete_message_does_not_forward_unsupported_reason():
+    service, bot = _service_with_bot()
+    guild = MagicMock(); guild.id = 123; guild.name = "Test"
+    channel = MagicMock(); channel.id = 456
+    message = SimpleNamespace(id=789, delete=AsyncMock())
+    channel.fetch_message = AsyncMock(return_value=message)
+    guild.get_channel.return_value = channel; bot.get_guild.return_value = guild
+
+    with (
+        _runtime_policy(123),
+        patch("services.discord_admin_service.discord.TextChannel", new=type(channel)),
+    ):
+        result = await service.delete_message(123, 456, 789, "cleanup")
+
+    assert result["success"] is True
+    channel.fetch_message.assert_awaited_once_with(789)
+    message.delete.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
 async def test_disallowed_guild_cannot_be_mutated():
     service, bot = _service_with_bot()
     bot.get_guild.return_value = MagicMock()

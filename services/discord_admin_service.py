@@ -400,7 +400,10 @@ class DiscordAdminService:
             if not isinstance(channel, (discord.TextChannel, discord.Thread)):
                 return {"success": False, "message": f"Channel {channel_id} is not a text channel"}
             message = await channel.fetch_message(message_id)
-            await message.delete(reason=reason or "MCP admin action")
+            # discord.Message.delete() does not accept an audit-log reason.
+            # Keep the MCP reason argument for a stable tool surface, but do not
+            # forward it to discord.py.
+            await message.delete()
             return {
                 "success": True,
                 "guild_id": guild.id,

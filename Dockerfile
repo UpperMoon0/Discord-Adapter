@@ -40,5 +40,7 @@ EXPOSE 8004
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8004/health', timeout=5).raise_for_status()" || exit 1
 
-USER lily:lily
+# Production runs this image as UID/GID 10001 via docker-compose.prod.yml. The
+# image intentionally leaves USER unset because NsTut-CICD appends root-only
+# addon installation layers when building the composite release.
 CMD ["python", "main.py"]

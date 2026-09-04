@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import timedelta
 from typing import Awaitable, Callable, TypeVar
 
@@ -14,6 +15,22 @@ from services.bot_service import bot_service
 
 logger = logging.getLogger("lily-discord-adapter")
 T = TypeVar("T")
+
+
+def _id_allowlist_from_env(name: str) -> frozenset[int]:
+    values: set[int] = set()
+    for raw in os.getenv(name, "").split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            logger.warning("Ignoring invalid %s entry: %s", name, raw)
+            continue
+        if value > 0:
+            values.add(value)
+    return frozenset(values)
 
 
 class DiscordAdminService:
@@ -133,7 +150,7 @@ class DiscordAdminService:
             }
         return await self._run(op)
 
-    async def list_channels(self, guild_id: int) -> dict:
+    async def list_channels(self, guild_id: int, include_threads: bool = True) -> dict:
         async def op() -> dict:
             guild, error = self._guild(guild_id)
             if error:
@@ -145,11 +162,27 @@ class DiscordAdminService:
                 "category_id": getattr(channel, "category_id", None),
                 "position": channel.position,
             } for channel in guild.channels]
+            if include_threads:
+                seen = {channel["id"] for channel in channels}
+                for thread in getattr(guild, "threads", []):
+                    if thread.id in seen:
+                        continue
+                    channels.append({
+                        "id": thread.id,
+                        "name": thread.name,
+                        "type": str(thread.type),
+                        "category_id": getattr(thread, "category_id", None),
+                        "position": getattr(thread, "position", None),
+                        "parent_id": getattr(thread, "parent_id", None),
+                        "archived": getattr(thread, "archived", None),
+                        "locked": getattr(thread, "locked", None),
+                    })
             return {
                 "success": True,
                 "guild_id": guild.id,
                 "guild_name": guild.name,
                 "channels": channels,
+                "include_threads": include_threads,
             }
         return await self._run(op)
 
@@ -316,6 +349,144 @@ class DiscordAdminService:
                 "messages": messages,
                 "count": len(messages),
             }
+        return await self._run(op)
+
+    def _existing_dm_channel(self, user_id: int):
+        for channel in getattr(self.bot_service.bot, "private_channels", []):
+            if not isinstance(channel, discord.DMChannel):
+                continue
+            recipient = getattr(channel, "recipient", None)
+            if getattr(recipient, "id", None) == user_id:
+                return channel
+        return None
+
+    async def _resolve_dm_channel(self, user_id: int):
+        if user_id <= 0:
+            return None, {"success": False, "message": "user_id must be a positive Discord snowflake"}
+
+        existing = self._existing_dm_channel(user_id)
+        if existing is not None:
+            return existing, None
+
+        explicitly_allowed = user_id in _id_allowlist_from_env("DISCORD_MCP_DM_USER_IDS")
+        if not explicitly_allowed:
+            return None, {
+                "success": False,
+                "code": "dm_target_not_allowed",
+                "message": (
+                    f"User {user_id} is not an existing DM conversation and is not listed "
+                    "in DISCORD_MCP_DM_USER_IDS"
+                ),
+            }
+
+        user = self.bot_service.bot.get_user(user_id)
+        if user is None:
+            user = await self.bot_service.bot.fetch_user(user_id)
+        channel = getattr(user, "dm_channel", None) or await user.create_dm()
+        return channel, None
+
+    async def direct_messages(self, user_id: int | None = None, limit: int = 25) -> dict:
+        limit = max(1, min(limit, 100))
+
+        async def op() -> dict:
+            if user_id is None:
+                conversations = []
+                for channel in getattr(self.bot_service.bot, "private_channels", []):
+                    if not isinstance(channel, discord.DMChannel):
+                        continue
+                    recipient = getattr(channel, "recipient", None)
+                    if recipient is None:
+                        continue
+                    conversations.append({
+                        "channel_id": channel.id,
+                        "user": {
+                            "id": recipient.id,
+                            "name": str(recipient),
+                            "display_name": getattr(recipient, "display_name", None),
+                            "bot": getattr(recipient, "bot", False),
+                        },
+                        "last_message_id": getattr(channel, "last_message_id", None),
+                    })
+                    if len(conversations) >= limit:
+                        break
+                return {
+                    "success": True,
+                    "conversations": conversations,
+                    "count": len(conversations),
+                    "explicit_dm_user_ids": sorted(_id_allowlist_from_env("DISCORD_MCP_DM_USER_IDS")),
+                    "note": "Existing DM conversations are replyable; only explicitly configured users may be targeted before they have messaged the bot.",
+                }
+
+            channel, error = await self._resolve_dm_channel(user_id)
+            if error:
+                return error
+            messages = []
+            async for message in channel.history(limit=limit):
+                messages.append(self._message_summary(message))
+            recipient = getattr(channel, "recipient", None)
+            return {
+                "success": True,
+                "channel_id": channel.id,
+                "user_id": user_id,
+                "user_name": str(recipient) if recipient is not None else None,
+                "messages": messages,
+                "count": len(messages),
+            }
+
+        return await self._run(op)
+
+    async def send_direct_message(
+        self,
+        user_id: int,
+        content: str,
+        reply_to_message_id: int | None = None,
+        quote_message_id: int | None = None,
+    ) -> dict:
+        content = content.strip()
+        if not content:
+            return {"success": False, "message": "content must not be empty"}
+
+        async def op() -> dict:
+            channel, error = await self._resolve_dm_channel(user_id)
+            if error:
+                return error
+
+            final_content = content
+            if quote_message_id is not None:
+                quote = await channel.fetch_message(quote_message_id)
+                quote_text = quote.content.strip() or "[no text content]"
+                quote_lines = "\n".join(f"> {line}" for line in quote_text.splitlines())
+                quote_header = f"> **{getattr(quote.author, 'display_name', str(quote.author))}:**"
+                final_content = f"{quote_header}\n{quote_lines}\n\n{final_content}"
+
+            if len(final_content) > 2000:
+                return {
+                    "success": False,
+                    "message": "final message exceeds Discord's 2000-character limit after quote formatting",
+                }
+
+            reference = None
+            if reply_to_message_id is not None:
+                reference = await channel.fetch_message(reply_to_message_id)
+
+            message = await channel.send(
+                final_content,
+                allowed_mentions=discord.AllowedMentions(
+                    everyone=False, users=False, roles=False, replied_user=False
+                ),
+                reference=reference,
+                mention_author=False,
+            )
+            return {
+                "success": True,
+                "channel_id": channel.id,
+                "user_id": user_id,
+                "message_id": message.id,
+                "content": final_content,
+                "reply_to_message_id": reply_to_message_id,
+                "quote_message_id": quote_message_id,
+            }
+
         return await self._run(op)
 
     async def get_audit_log(self, guild_id: int, limit: int = 25) -> dict:

@@ -15,21 +15,22 @@ Do not assume those surfaces share authentication. MCP OAuth and the Redis guild
 - Discord bot integration with Lily-Core
 - FastAPI health/readiness endpoints
 - Streamable HTTP MCP endpoint at `/mcp/`
-- 61 semantic Discord administration MCP tools
+- 52 semantic Discord administration MCP tools after consolidating redundant inverse/query operations
 - Self-hosted OAuth 2.0 authorization-code + PKCE flow
 - Redis-backed runtime guild access policy with an immutable in-memory snapshot
 - One-time migration/bootstrap from `DISCORD_ADMIN_GUILD_IDS`
 - Deployment-gated runtime policy writes, disabled by default
 - Bounded Redis audit history for policy mutations
 - Read-only inspection of images, GIFs, and videos attached to Discord messages
-- Explicit user/role mentions, replies, and quotes for MCP-sent messages
+- Explicit user/role mentions, replies, and quotes for MCP-sent guild messages
+- Read/reply support for bot direct messages with bounded DM target resolution
 - Independently packaged Discord addons through Python entry points
 - Cross-event-loop dispatch so MCP requests execute Discord operations on the bot's owning event loop
 
 ## Documentation
 
 - [Configuration](docs/configuration.md) — every runtime environment variable and fail-closed behavior
-- [MCP tool reference](docs/mcp-tools.md) — complete 61-tool inventory and important semantics
+- [MCP tool reference](docs/mcp-tools.md) — complete 52-tool inventory, consolidation map, and important semantics
 - [HTTP and WebSocket API](docs/http-api.md) — health, OAuth, legacy bot-control, and cookie routes
 - [Addon development](docs/addons.md) — stable addon contract, lifecycle, configuration, and deployment
 
@@ -112,15 +113,9 @@ Guild checks use an immutable in-memory snapshot and do not perform Redis I/O on
 
 ### Policy MCP tools
 
-Read/reload tools:
+Policy inspection uses `discord_get_access_policy`; pass `reload=true` when the Redis-backed policy must be refreshed first.
 
-- `discord_get_access_policy`
-- `discord_reload_access_policy`
-
-Privileged mutation tools:
-
-- `discord_policy_allow_guild`
-- `discord_policy_remove_guild`
+Privileged mutation uses `discord_set_guild_access(guild_id, allowed)` for both allow and remove operations.
 
 Policy mutation tools require:
 
@@ -133,6 +128,12 @@ The default is `false`. Ordinary Discord administration access is intentionally 
 Every successful policy mutation is written to a bounded Redis audit list with the action, guild ID, UTC timestamp, previous state, new state, and available caller/tool context. `DISCORD_POLICY_AUDIT_MAX_ENTRIES` defaults to `100`.
 
 `discord_get_access_policy`, `/health`, `/ready`, and `/mcp/health` expose policy-store state including Redis readiness, configured state, `all_guilds`, guild IDs, policy version/revision, source, and whether policy writes are enabled.
+
+## Direct messages over MCP
+
+`discord_direct_messages` lists currently known bot DM conversations when `user_id` is omitted and reads one DM history when a user ID is supplied. `discord_send_direct_message` sends normal bot DMs and supports replies and quote formatting.
+
+A DM target is accepted only when the bot already has that DM conversation or the user ID is explicitly listed in `DISCORD_MCP_DM_USER_IDS`. This keeps the authenticated MCP owner able to reply to inbound DMs without turning the adapter into an arbitrary-user messaging relay. Treat DM content as untrusted user data, just like messages read from a guild.
 
 ## OAuth / MCP
 
@@ -264,4 +265,4 @@ Legacy HTTP routes are outside those four MCP layers and need deployment-level n
 
 Source CI builds the Docker image, runs Python syntax compilation, executes the pytest suite, starts a Redis sidecar, launches the adapter container with `REDIS_URL`, and requires `/health` to report `mcp_policy_store_ready=true`.
 
-Tests cover policy bootstrap and fail-closed behavior, Redis authority, runtime mutation/reload, atomic snapshot preservation, policy-write gating, audit persistence, the complete 61-tool MCP surface, rich message arguments, destructive annotations, extended Discord operations, media inspection, OAuth, addon lifecycle, and message-controller behavior.
+Tests cover policy bootstrap and fail-closed behavior, Redis authority, runtime mutation/reload, atomic snapshot preservation, policy-write gating, audit persistence, the complete 52-tool MCP surface, rich message arguments, destructive annotations, extended Discord operations, media inspection, OAuth, addon lifecycle, and message-controller behavior.

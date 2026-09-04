@@ -273,3 +273,89 @@ async def test_list_members_fails_clearly_when_members_intent_is_disabled():
     assert result["success"] is False
     assert result["code"] == "members_intent_disabled"
     assert "DISCORD_MEMBERS_INTENT=true" in result["hint"]
+
+
+@pytest.mark.asyncio
+async def test_list_channels_can_fold_active_threads_into_channel_discovery():
+    service, bot = _service_with_bot()
+    guild = MagicMock(); guild.id = 123; guild.name = "Test"
+    text = SimpleNamespace(id=10, name="general", type="text", category_id=None, position=0)
+    thread = SimpleNamespace(
+        id=20, name="topic", type="public_thread", category_id=None,
+        position=None, parent_id=10, archived=False, locked=False,
+    )
+    guild.channels = [text]
+    guild.threads = [thread]
+    bot.get_guild.return_value = guild
+
+    with _runtime_policy(123):
+        result = await service.list_channels(123, include_threads=True)
+
+    assert result["success"] is True
+    assert [item["id"] for item in result["channels"]] == [10, 20]
+    assert result["channels"][1]["parent_id"] == 10
+
+
+@pytest.mark.asyncio
+async def test_direct_message_listing_exposes_existing_conversations():
+    service, bot = _service_with_bot()
+    recipient = SimpleNamespace(id=42, display_name="Yuta", bot=False)
+    channel = MagicMock(); channel.id = 500; channel.recipient = recipient; channel.last_message_id = 900
+    bot.private_channels = [channel]
+
+    with patch("services.discord_admin_service.discord.DMChannel", new=type(channel)):
+        result = await service.direct_messages()
+
+    assert result["success"] is True
+    assert result["count"] == 1
+    assert result["conversations"][0]["user"]["id"] == 42
+    assert result["conversations"][0]["last_message_id"] == 900
+
+
+@pytest.mark.asyncio
+async def test_send_direct_message_replies_to_existing_dm_without_guild_scope():
+    service, bot = _service_with_bot()
+    recipient = SimpleNamespace(id=42, display_name="Yuta", bot=False)
+    channel = MagicMock(); channel.id = 500; channel.recipient = recipient
+    channel.send = AsyncMock(return_value=SimpleNamespace(id=901))
+    bot.private_channels = [channel]
+
+    with patch("services.discord_admin_service.discord.DMChannel", new=type(channel)):
+        result = await service.send_direct_message(42, "hello")
+
+    assert result["success"] is True
+    assert result["user_id"] == 42
+    kwargs = channel.send.await_args.kwargs
+    assert kwargs["allowed_mentions"].everyone is False
+    assert kwargs["allowed_mentions"].users is False
+    assert kwargs["allowed_mentions"].roles is False
+
+
+@pytest.mark.asyncio
+async def test_send_direct_message_rejects_arbitrary_new_user():
+    service, bot = _service_with_bot()
+    bot.private_channels = []
+    bot.guilds = []
+
+    with patch.dict(os.environ, {"DISCORD_MCP_DM_USER_IDS": ""}, clear=False):
+        result = await service.send_direct_message(999, "hello")
+
+    assert result["success"] is False
+    assert result["code"] == "dm_target_not_allowed"
+    bot.fetch_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_direct_message_allows_explicit_deployment_user():
+    service, bot = _service_with_bot()
+    bot.private_channels = []
+    bot.guilds = []
+    channel = MagicMock(); channel.id = 500; channel.send = AsyncMock(return_value=SimpleNamespace(id=901))
+    user = MagicMock(); user.id = 42; user.dm_channel = channel
+    bot.get_user.return_value = user
+
+    with patch.dict(os.environ, {"DISCORD_MCP_DM_USER_IDS": "42"}, clear=False):
+        result = await service.send_direct_message(42, "hello")
+
+    assert result["success"] is True
+    channel.send.assert_awaited_once()

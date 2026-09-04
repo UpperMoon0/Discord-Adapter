@@ -1,6 +1,7 @@
 """Low-level HTTP client for Lily-Core."""
 
 import logging
+import os
 from typing import Optional
 
 import httpx
@@ -17,6 +18,12 @@ class LilyCoreClient:
         self.http_client = httpx.AsyncClient(timeout=120.0)
 
     async def get_base_url(self, force_refresh: bool = False) -> Optional[str]:
+        # Production supplies a private Docker-network endpoint. This avoids
+        # hairpinning trusted chat through Lily-Core's former public hostname.
+        private_url = os.getenv("LILY_CORE_HTTP_URL", "").strip().rstrip("/")
+        if private_url:
+            self.http_url = private_url
+            return self.http_url
         if force_refresh or not self.http_url:
             self.http_url = self.get_http_url_func()
         return self.http_url
@@ -32,7 +39,6 @@ class LilyCoreClient:
             "user_id": user_id,
             "username": username,
         }
-        # Never log user-controlled prompt text or Lily-Core response bodies.
         logger.info(
             "Sending scoped Discord chat request to lily-core for %s (%s chars)",
             user_id,

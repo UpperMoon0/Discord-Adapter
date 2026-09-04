@@ -95,6 +95,37 @@ async def test_read_message_media_returns_actual_mcp_image_content():
 
 
 @pytest.mark.asyncio
+async def test_large_static_image_is_normalized_without_duration_probe():
+    guild = SimpleNamespace(id=123)
+    channel = MagicMock()
+    channel.id = 456
+    attachment = _attachment()
+    message = SimpleNamespace(
+        id=789,
+        jump_url="https://discord.com/channels/123/456/789",
+        attachments=[attachment],
+        embeds=[],
+    )
+    channel.fetch_message = AsyncMock(return_value=message)
+    service = DiscordMediaService(_AdminHarness(guild, channel))
+    service.max_direct_image_bytes = 4
+    service._probe_duration = AsyncMock(return_value=12.0)
+
+    async def write_frame(_source, target, _timestamp):
+        target.write_bytes(b"normalized-jpeg")
+
+    service._extract_frame = AsyncMock(side_effect=write_frame)
+
+    with patch("services.discord_media_service.discord.TextChannel", new=type(channel)):
+        result = await service.read_message_media(123, 456, 789)
+
+    assert isinstance(result[1], ImageContent)
+    assert result[1].mime_type == "image/jpeg"
+    service._probe_duration.assert_not_awaited()
+    service._extract_frame.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_read_message_media_rejects_oversized_attachment_before_download():
     guild = SimpleNamespace(id=123)
     channel = MagicMock()

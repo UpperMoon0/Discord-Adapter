@@ -7,7 +7,7 @@ This document describes the runtime environment variables read by Discord Adapte
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DISCORD_BOT_TOKEN` | unset | Enables the Discord gateway bot. Without it, the process stays alive in HTTP/MCP-only mode. |
-| `DISCORD_MEMBERS_INTENT` | `false` | Enables Discord Server Members Intent in the client. Also enable the privileged intent in the Discord Developer Portal. Useful for reliable name-based member search. |
+| `DISCORD_MEMBERS_INTENT` | `false` | Enables Discord Server Members Intent in the client. Also enable the privileged intent in the Discord Developer Portal. Required for exhaustive `discord_list_members` paging and useful for reliable name-based member search. |
 | `DISCORD_ADDONS` | empty | Comma-separated `discord_adapter.addons` entry-point IDs to load. Empty disables addons. `*` intentionally enables every installed addon. |
 | `DISCORD_ADDON_STRICT` | `false` | If true, a missing or failed configured addon prevents bot startup. Otherwise failures are isolated and reported in health state. |
 

@@ -1,6 +1,6 @@
 # MCP tool reference
 
-Discord Adapter advertises exactly 60 semantic Discord tools. The runtime test suite asserts that this inventory is complete and that every tool has a model-readable description.
+Discord Adapter advertises exactly 61 semantic Discord tools. The runtime test suite asserts that this inventory is complete and that every tool has a model-readable description.
 
 All guild-scoped tools require an explicit `guild_id` from an allowed server. MCP authentication, the Redis guild policy, Discord permissions, and Discord role hierarchy all still apply.
 
@@ -18,6 +18,7 @@ The annotation is guidance for MCP hosts; it is not a replacement for authorizat
 | --- | --- | --- |
 | `discord_list_servers` | Read | List policy-allowed guilds and the bot's permission/capability matrix. |
 | `discord_list_channels` | Read | List channels in one allowed guild. |
+| `discord_list_members` | Read | Exhaustively page through current guild members using Discord REST; exposes explicit server nickname and optional bot filtering. |
 | `discord_find_members` | Read | Find members by username, display/global name, or exact user ID. |
 | `discord_get_member` | Read | Read one member's roles and timeout state. |
 | `discord_read_messages` | Read | Read recent text-channel/thread messages, including jump URLs and reply/reference metadata. |

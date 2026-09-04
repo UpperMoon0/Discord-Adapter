@@ -328,7 +328,7 @@ async def discord_unban_member(
 
 @base_tools.tool(
     title="Add Discord role",
-    description="Assign one existing Discord role to one member.",
+    description="Assign one existing role to one member.",
     annotations=WRITE,
 )
 async def discord_add_role(
@@ -447,9 +447,10 @@ async def mcp_health(_request):
 
 
 def build_mcp_asgi_app():
-    """Build the mountable Streamable HTTP ASGI app."""
+    """Build a stateless, finite-response Streamable HTTP ASGI app."""
     return mcp_server.streamable_http_app(
         json_response=True,
+        stateless_http=True,
         streamable_http_path="/",
         transport_security=_transport_security(),
     )

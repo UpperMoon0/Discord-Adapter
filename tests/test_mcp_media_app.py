@@ -3,7 +3,7 @@ from mcp import Client
 from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 
 from mcp_media_app import MEDIA_UI_RESOURCE_URI, MEDIA_VIEWER_HTML
-from mcp_server import mcp_server
+from mcp_server import build_mcp_asgi_app, mcp_server
 
 
 @pytest.mark.asyncio
@@ -23,6 +23,7 @@ async def test_media_tools_and_viewer_resource_are_advertised():
     )
     assert media_tool.meta is not None
     assert media_tool.meta["ui"]["resourceUri"] == MEDIA_UI_RESOURCE_URI
+    assert "listing first is unnecessary" in media_tool.description
 
     resource = next(
         item for item in resources_result.resources if str(item.uri) == MEDIA_UI_RESOURCE_URI
@@ -37,3 +38,9 @@ def test_mcp_apps_extension_is_advertised():
 def test_media_viewer_uses_csp_safe_data_urls_for_image_content():
     assert "URL.createObjectURL" not in MEDIA_VIEWER_HTML
     assert "data:${mime};base64,${image.data}" in MEDIA_VIEWER_HTML
+
+
+def test_streamable_http_transport_is_stateless_json():
+    build_mcp_asgi_app()
+    assert mcp_server.session_manager.stateless is True
+    assert mcp_server.session_manager.json_response is True

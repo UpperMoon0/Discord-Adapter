@@ -46,18 +46,20 @@ Changing `DISCORD_ADMIN_GUILD_IDS` after a policy has been seeded does not chang
 
 OAuth supports authorization-code flow with PKCE S256, dynamic client registration, `mcp` and `offline_access` scopes, and refresh-token rotation.
 
+The Streamable HTTP endpoint is configured for stateless, finite JSON responses so each MCP request completes with its HTTP response instead of retaining an application session or SSE stream.
+
 ## Discord message media inspection
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DISCORD_MEDIA_MAX_DOWNLOAD_BYTES` | `33554432` (32 MiB) | Maximum server-side media download accepted for MCP inspection. Non-positive/invalid values fall back to the default. |
-| `DISCORD_MEDIA_MAX_DIRECT_IMAGE_BYTES` | `6291456` (6 MiB) | Maximum static image size returned directly as MCP image content before normalization/sampling is preferred. |
+| `DISCORD_MEDIA_MAX_DIRECT_IMAGE_BYTES` | `1048576` (1 MiB) | Maximum static image size returned directly as MCP image content. Larger static images are normalized to a bounded JPEG frame before being returned, reducing oversized base64 tool results. |
 | `DISCORD_MEDIA_FFMPEG_TIMEOUT_SECONDS` | `20` | Timeout used for `ffmpeg`/`ffprobe` media processing. |
 | `DISCORD_MEDIA_ALLOWED_HOSTS` | empty additions | Extra comma-separated HTTPS hosts that may be fetched for embedded media. These extend, rather than replace, the built-in Discord/Tenor/Giphy host allowlist. |
 
 Attachments from already-authorized Discord messages are inspected through Discord attachment URLs. Embedded remote media is fetched only from trusted HTTPS hosts. Redirect following is disabled for the embed fetch path.
 
-The Docker image installs `ffmpeg`, which also provides `ffprobe`.
+The Docker image installs `ffmpeg`, which also provides `ffprobe`. Static-image normalization does not run `ffprobe`; duration probing is reserved for animated images and video sampling.
 
 ## Concurrency and rate limits
 
@@ -65,7 +67,7 @@ The Docker image installs `ffmpeg`, which also provides `ffprobe`.
 | --- | --- | --- |
 | `RATE_LIMIT_RPS` | `10` | Per-user/request rate configuration used by the message-processing limiter. |
 | `MAX_CONCURRENT_REQUESTS` | `5` | Concurrent-request limit in the shared rate-limit configuration. |
-| `BURST_LIMIT` | `20` | Burst allowance in the rate-limit configuration. |
+| `BURST_LIMIT` | `20` | Burst allowance in the shared rate-limit configuration. |
 | `MAX_CONCURRENT_MESSAGES` | `10` | Maximum Discord/Lily-Core messages processed concurrently by the queue manager. |
 | `MESSAGE_QUEUE_SIZE` | `1000` | Maximum queued message count before new messages are rejected with a queue-full response. |
 | `NUM_WORKERS` | `4` | Number of message-processing workers started by the concurrency manager. |
@@ -109,7 +111,7 @@ MCP_ALLOWED_HOSTS=
 MCP_ALLOWED_ORIGINS=
 
 DISCORD_MEDIA_MAX_DOWNLOAD_BYTES=33554432
-DISCORD_MEDIA_MAX_DIRECT_IMAGE_BYTES=6291456
+DISCORD_MEDIA_MAX_DIRECT_IMAGE_BYTES=1048576
 DISCORD_MEDIA_FFMPEG_TIMEOUT_SECONDS=20
 DISCORD_MEDIA_ALLOWED_HOSTS=
 

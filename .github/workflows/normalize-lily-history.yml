@@ -28,6 +28,15 @@ jobs:
 
           git checkout main
           before_tree="$(git rev-parse 'main^{tree}')"
+          git log main --format='%B' > /tmp/messages.before
+          git log main --format='%an <%ae>' > /tmp/authors.before
+
+          stale_noreply_before="$(grep -Fc 'lily@users.noreply.github.com' /tmp/messages.before || true)"
+          stale_local_before="$(grep -Fc 'lily@local.invalid' /tmp/messages.before || true)"
+          lily_authors_before="$(grep -Fxc 'Lily <lily@nstut.cloud>' /tmp/authors.before || true)"
+
+          test "$stale_noreply_before" -gt 0
+          test "$lily_authors_before" -gt 0
 
           cat > /tmp/rewrite_message.py <<'PY'
           import sys
@@ -52,17 +61,21 @@ jobs:
           after_tree="$(git rev-parse 'main^{tree}')"
           test "$before_tree" = "$after_tree"
 
-          if git log main --format='%B' | grep -Fq 'lily@users.noreply.github.com'; then
+          git log main --format='%B' > /tmp/messages.after
+          git log main --format='%an <%ae>' > /tmp/authors.after
+
+          if grep -Fq 'lily@users.noreply.github.com' /tmp/messages.after; then
             echo 'stale GitHub noreply Lily identity is still reachable from main' >&2
             exit 1
           fi
 
-          if git log main --format='%B' | grep -Fq 'lily@local.invalid'; then
+          if grep -Fq 'lily@local.invalid' /tmp/messages.after; then
             echo 'stale local.invalid Lily identity is still reachable from main' >&2
             exit 1
           fi
 
-          git log main --format='%an <%ae>' | grep -Fqx 'Lily <lily@nstut.cloud>'
+          lily_authors_after="$(grep -Fxc 'Lily <lily@nstut.cloud>' /tmp/authors.after || true)"
+          test "$lily_authors_before" = "$lily_authors_after"
 
           git push origin refs/heads/main:refs/heads/main \
             --force-with-lease="refs/heads/main:${EXPECTED_REMOTE_TIP}"

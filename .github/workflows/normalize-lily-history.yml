@@ -19,7 +19,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Rewrite incorrect Lily identity trailers
+      - name: Normalize Lily author, committer, and co-author email
         shell: bash
         env:
           EXPECTED_REMOTE_TIP: ${{ github.sha }}
@@ -29,32 +29,43 @@ jobs:
           git checkout main
           before_tree="$(git rev-parse 'main^{tree}')"
           git log main --format='%B' > /tmp/messages.before
-          git log main --format='%an <%ae>' > /tmp/authors.before
+          git log main --format='%an <%ae>%n%cn <%ce>' > /tmp/identities.before
 
-          stale_noreply_before="$(grep -Fc 'lily@users.noreply.github.com' /tmp/messages.before || true)"
-          stale_local_before="$(grep -Fc 'lily@local.invalid' /tmp/messages.before || true)"
-          lily_authors_before="$(grep -Fxc 'Lily <lily@nstut.cloud>' /tmp/authors.before || true)"
-
-          test "$stale_noreply_before" -gt 0
-          test "$lily_authors_before" -gt 0
+          old_lily_identity_before="$(grep -Fxc 'Lily <lily@nstut.com>' /tmp/identities.before || true)"
+          test "$old_lily_identity_before" -gt 0
 
           cat > /tmp/rewrite_message.py <<'PY'
           import sys
 
           message = sys.stdin.read()
-          message = message.replace(
+          for old in (
               "lily@users.noreply.github.com",
-              "lily@nstut.cloud",
-          )
-          message = message.replace(
               "lily@local.invalid",
-              "lily@nstut.cloud",
-          )
+              "lily@nstut.com",
+          ):
+              message = message.replace(old, "lily@nstut.cloud")
           sys.stdout.write(message)
           PY
 
           export FILTER_BRANCH_SQUELCH_WARNING=1
           git filter-branch -f \
+            --env-filter '
+              if [ "$GIT_AUTHOR_NAME" = "Lily" ]; then
+                case "$GIT_AUTHOR_EMAIL" in
+                  lily@users.noreply.github.com|lily@local.invalid|lily@nstut.com)
+                    GIT_AUTHOR_EMAIL="lily@nstut.cloud"
+                    ;;
+                esac
+              fi
+              if [ "$GIT_COMMITTER_NAME" = "Lily" ]; then
+                case "$GIT_COMMITTER_EMAIL" in
+                  lily@users.noreply.github.com|lily@local.invalid|lily@nstut.com)
+                    GIT_COMMITTER_EMAIL="lily@nstut.cloud"
+                    ;;
+                esac
+              fi
+              export GIT_AUTHOR_EMAIL GIT_COMMITTER_EMAIL
+            ' \
             --msg-filter 'python3 /tmp/rewrite_message.py' \
             -- main
 
@@ -62,20 +73,19 @@ jobs:
           test "$before_tree" = "$after_tree"
 
           git log main --format='%B' > /tmp/messages.after
-          git log main --format='%an <%ae>' > /tmp/authors.after
+          git log main --format='%an <%ae>%n%cn <%ce>' > /tmp/identities.after
 
-          if grep -Fq 'lily@users.noreply.github.com' /tmp/messages.after; then
-            echo 'stale GitHub noreply Lily identity is still reachable from main' >&2
-            exit 1
-          fi
+          for stale in \
+            'lily@users.noreply.github.com' \
+            'lily@local.invalid' \
+            'lily@nstut.com'; do
+            if grep -Fq "$stale" /tmp/messages.after /tmp/identities.after; then
+              echo "stale Lily identity remains reachable from main: $stale" >&2
+              exit 1
+            fi
+          done
 
-          if grep -Fq 'lily@local.invalid' /tmp/messages.after; then
-            echo 'stale local.invalid Lily identity is still reachable from main' >&2
-            exit 1
-          fi
-
-          lily_authors_after="$(grep -Fxc 'Lily <lily@nstut.cloud>' /tmp/authors.after || true)"
-          test "$lily_authors_before" = "$lily_authors_after"
+          grep -Fqx 'Lily <lily@nstut.cloud>' /tmp/identities.after
 
           git push origin refs/heads/main:refs/heads/main \
             --force-with-lease="refs/heads/main:${EXPECTED_REMOTE_TIP}"

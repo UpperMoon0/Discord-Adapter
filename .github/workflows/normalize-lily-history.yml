@@ -1,0 +1,68 @@
+name: One-off normalize Lily git identity
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/normalize-lily-history.yml
+
+permissions:
+  contents: write
+
+jobs:
+  rewrite-history:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rewrite incorrect Lily identity trailers
+        shell: bash
+        env:
+          EXPECTED_REMOTE_TIP: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          git checkout main
+          before_tree="$(git rev-parse 'main^{tree}')"
+
+          cat > /tmp/rewrite_message.py <<'PY'
+          import sys
+
+          message = sys.stdin.read()
+          message = message.replace(
+              "lily@users.noreply.github.com",
+              "lily@nstut.cloud",
+          )
+          message = message.replace(
+              "lily@local.invalid",
+              "lily@nstut.cloud",
+          )
+          sys.stdout.write(message)
+          PY
+
+          export FILTER_BRANCH_SQUELCH_WARNING=1
+          git filter-branch -f \
+            --msg-filter 'python3 /tmp/rewrite_message.py' \
+            -- main
+
+          after_tree="$(git rev-parse 'main^{tree}')"
+          test "$before_tree" = "$after_tree"
+
+          if git log main --format='%B' | grep -Fq 'lily@users.noreply.github.com'; then
+            echo 'stale GitHub noreply Lily identity is still reachable from main' >&2
+            exit 1
+          fi
+
+          if git log main --format='%B' | grep -Fq 'lily@local.invalid'; then
+            echo 'stale local.invalid Lily identity is still reachable from main' >&2
+            exit 1
+          fi
+
+          git log main --format='%an <%ae>' | grep -Fqx 'Lily <lily@nstut.cloud>'
+
+          git push origin refs/heads/main:refs/heads/main \
+            --force-with-lease="refs/heads/main:${EXPECTED_REMOTE_TIP}"

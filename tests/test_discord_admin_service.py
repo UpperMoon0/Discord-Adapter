@@ -168,6 +168,63 @@ async def test_send_message_can_quote_message_content():
 
 
 @pytest.mark.asyncio
+async def test_edit_message_preserves_identity_and_suppresses_mentions():
+    service, bot = _service_with_bot()
+    bot.user = SimpleNamespace(id=777)
+    guild = MagicMock(); guild.id = 123; guild.name = "Test"
+    channel = MagicMock(); channel.id = 456
+    edited = SimpleNamespace(id=789, content="updated @everyone")
+    message = SimpleNamespace(
+        id=789,
+        author=SimpleNamespace(id=777),
+        edit=AsyncMock(return_value=edited),
+    )
+    channel.fetch_message = AsyncMock(return_value=message)
+    guild.get_channel.return_value = channel; bot.get_guild.return_value = guild
+
+    with (_runtime_policy(123), patch("services.discord_admin_service.discord.TextChannel", new=type(channel))):
+        result = await service.edit_message(123, 456, 789, "updated @everyone")
+
+    assert result == {
+        "success": True,
+        "guild_id": 123,
+        "channel_id": 456,
+        "message_id": 789,
+        "content": "updated @everyone",
+    }
+    channel.fetch_message.assert_awaited_once_with(789)
+    message.edit.assert_awaited_once()
+    kwargs = message.edit.await_args.kwargs
+    assert kwargs["content"] == "updated @everyone"
+    assert kwargs["allowed_mentions"].everyone is False
+    assert kwargs["allowed_mentions"].users is False
+    assert kwargs["allowed_mentions"].roles is False
+
+
+@pytest.mark.asyncio
+async def test_edit_message_rejects_messages_not_owned_by_bot():
+    service, bot = _service_with_bot()
+    bot.user = SimpleNamespace(id=777)
+    guild = MagicMock(); guild.id = 123; guild.name = "Test"
+    channel = MagicMock(); channel.id = 456
+    message = SimpleNamespace(
+        id=789,
+        author=SimpleNamespace(id=111),
+        edit=AsyncMock(),
+    )
+    channel.fetch_message = AsyncMock(return_value=message)
+    guild.get_channel.return_value = channel; bot.get_guild.return_value = guild
+
+    with (_runtime_policy(123), patch("services.discord_admin_service.discord.TextChannel", new=type(channel))):
+        result = await service.edit_message(123, 456, 789, "updated")
+
+    assert result["success"] is False
+    assert "Only messages sent by this Discord bot" in result["message"]
+    message.edit.assert_not_awaited()
+
+
+
+@pytest.mark.asyncio
 async def test_delete_message_does_not_forward_unsupported_reason():
     service, bot = _service_with_bot()
     guild = MagicMock(); guild.id = 123; guild.name = "Test"

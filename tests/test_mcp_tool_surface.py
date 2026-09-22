@@ -23,6 +23,7 @@ BASE_TOOL_NAMES = {
     "discord_list_roles",
     "discord_get_audit_log",
     "discord_send_message",
+    "discord_edit_message",
     "discord_delete_message",
     "discord_timeout_member",
     "discord_clear_timeout",
@@ -53,7 +54,7 @@ async def test_runtime_mcp_tool_surface_is_compact_complete_and_described():
     )
 
     assert set(tools) == expected
-    assert len(tools) == 52
+    assert len(tools) == 53
     assert all(tool.description and tool.description.strip() for tool in tools.values())
 
 
@@ -64,6 +65,16 @@ async def test_send_message_tool_advertises_rich_message_arguments():
     tool = next(tool for tool in result.tools if tool.name == "discord_send_message")
     properties = tool.input_schema["properties"]
     assert {"mention_user_ids", "mention_role_ids", "reply_to_message_id", "quote_message_id"}.issubset(properties)
+
+
+@pytest.mark.asyncio
+async def test_edit_message_tool_exposes_stable_message_identity_contract():
+    async with Client(mcp_server) as client:
+        result = await client.list_tools()
+    tool = next(tool for tool in result.tools if tool.name == "discord_edit_message")
+    properties = tool.input_schema["properties"]
+    assert {"guild_id", "channel_id", "message_id", "content"}.issubset(properties)
+
 
 
 @pytest.mark.asyncio

@@ -247,6 +247,23 @@ async def discord_send_message(
 
 
 @base_tools.tool(
+    title="Edit Discord message",
+    description=(
+        "Edit the text content of one message previously sent by this bot in an allowed Discord server. "
+        "The message ID, pin state, replies, and jump URL are preserved. Mentions are suppressed during edits."
+    ),
+    annotations=WRITE,
+)
+async def discord_edit_message(
+    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
+    channel_id: Annotated[int, Field(description="Discord text channel or thread ID")],
+    message_id: Annotated[int, Field(gt=0, description="Discord message ID")],
+    content: Annotated[str, Field(min_length=1, max_length=2000)],
+) -> dict:
+    return await discord_admin_service.edit_message(guild_id, channel_id, message_id, content)
+
+
+@base_tools.tool(
     title="Delete Discord message",
     description="Delete one specific Discord message from one allowed server.",
     annotations=DESTRUCTIVE,

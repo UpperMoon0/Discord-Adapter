@@ -623,6 +623,45 @@ class DiscordAdminService:
             }
         return await self._run(op)
 
+    async def edit_message(
+        self, guild_id: int, channel_id: int, message_id: int, content: str
+    ) -> dict:
+        content = content.strip()
+        if not content:
+            return {"success": False, "message": "content must not be empty"}
+        if len(content) > 2000:
+            return {"success": False, "message": "content exceeds Discord's 2000-character limit"}
+
+        async def op() -> dict:
+            guild, error = self._guild(guild_id)
+            if error:
+                return error
+            channel = self._channel(guild, channel_id)
+            if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+                return {"success": False, "message": f"Channel {channel_id} is not a text channel"}
+
+            message = await channel.fetch_message(message_id)
+            bot_user = self.bot_service.bot.user
+            if bot_user is None or getattr(message.author, "id", None) != bot_user.id:
+                return {
+                    "success": False,
+                    "message": "Only messages sent by this Discord bot can be edited",
+                }
+
+            edited = await message.edit(
+                content=content,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return {
+                "success": True,
+                "guild_id": guild.id,
+                "channel_id": channel.id,
+                "message_id": edited.id,
+                "content": edited.content,
+            }
+        return await self._run(op)
+
+
     async def delete_message(
         self, guild_id: int, channel_id: int, message_id: int, reason: str
     ) -> dict:

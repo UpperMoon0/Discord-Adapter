@@ -156,7 +156,7 @@ Addon package names do not have to match their entry-point IDs, but keeping them
 
 ## Command registration guidance
 
-Because built-in and addon application commands share the same bot command tree, avoid duplicate slash-command names. Register commands during `setup(context)` so they are present before the host synchronizes the combined tree.
+Because built-in and addon application commands share the same bot command tree, avoid duplicate slash-command names. Register commands during `setup(context)` so they are present before the host synchronizes the combined tree. Global definitions act as local templates and are published only to policy-approved guilds. Guild-specific definitions are also gated. The host removes stale global/unapproved registrations and reconciles policy changes every 30 seconds. Addon calls to `tree.sync()` cannot publish global commands; the host owns guild publication. A shared tree interaction check and bot prefix check enforce approval at execution.
 
 If an addon installs listeners or other resources that need explicit cleanup, implement `shutdown()` and unregister/close those resources there.
 

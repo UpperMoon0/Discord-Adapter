@@ -29,6 +29,7 @@ from services.concurrency_manager import ConcurrencyManager, RateLimitConfig, Us
 from services.lily_core_service import LilyCoreService
 from services.music_service import MusicService
 from services.session_service import SessionService
+from services.command_tree import WhitelistedCommandTree
 from utils.mcp_oauth_server import MCPAuth, MCPOAuthManager
 from utils.message_utils import send_message
 from utils.service_discovery import ServiceDiscovery
@@ -173,9 +174,31 @@ class DiscordAdapterBot(commands.Bot):
     def __init__(self, *args, addon_manager: AddonManager, **kwargs):
         super().__init__(*args, **kwargs)
         self.addon_manager = addon_manager
+        self._command_policy_task = None
+        self.add_check(self.tree.prefix_check)
 
     async def setup_hook(self) -> None:
         await self.addon_manager.load(self)
+
+    async def reconcile_commands(self) -> None:
+        if self._command_policy_task is None or self._command_policy_task.done():
+            self._command_policy_task = asyncio.create_task(self._watch_command_policy())
+        await self.tree.reconcile()
+
+    async def _watch_command_policy(self) -> None:
+        while not self.is_closed():
+            await asyncio.sleep(30)
+            try:
+                await self.tree.reconcile()
+            except Exception:
+                logger.exception("Failed to reconcile Discord command policy")
+
+    async def close(self) -> None:
+        if self._command_policy_task is not None:
+            self._command_policy_task.cancel()
+            await asyncio.gather(self._command_policy_task, return_exceptions=True)
+            self._command_policy_task = None
+        await super().close()
 
 
 def create_discord_bot():
@@ -192,6 +215,7 @@ def create_discord_bot():
         intents=intents,
         description="Lily Discord Adapter - Connects Discord to Lily-Core",
         addon_manager=addon_manager,
+        tree_cls=WhitelistedCommandTree,
     )
 
     # This bridge uses DISCORD_CHAT_GUILD_IDS, which is separate from MCP's
@@ -215,8 +239,8 @@ def create_discord_bot():
     async def on_ready():
         logger.info("Bot logged in as %s (%s)", bot.user.name, bot.user.id)
         try:
-            synced = await bot.tree.sync()
-            logger.info("Synced %s command(s)", len(synced))
+            await bot.reconcile_commands()
+            logger.info("Reconciled guild commands against the active whitelist")
         except Exception as exc:
             logger.error("Failed to sync commands: %s", exc)
 
@@ -228,6 +252,10 @@ def create_discord_bot():
         )
         logger.info("Discord addons: %s", addon_manager.status())
         logger.info("Lily-Discord-Adapter is ready")
+
+    @bot.event
+    async def on_guild_join(guild):
+        await bot.reconcile_commands()
 
     return bot
 

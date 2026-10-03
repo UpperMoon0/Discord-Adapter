@@ -194,7 +194,9 @@ This flow requires Discord Message Content Intent because the adapter reads norm
 
 ### Slash commands
 
-The currently registered application commands are:
+All built-in and addon application commands are published only in guilds allowed by the active Redis access policy. Global registrations and stale registrations in unapproved guilds are removed on startup. Policy changes are reconciled within 30 seconds; revoked guilds are denied immediately at execution, including cached commands, context menus, autocomplete, and addon prefix commands. DMs cannot invoke bot commands. `DISCORD_CHAT_GUILD_IDS` remains a separate Lily-Core chat setting.
+
+The built-in application commands are:
 
 - `/join` — join the invoking user's voice channel
 - `/play <url>` — queue a YouTube URL

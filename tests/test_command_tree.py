@@ -206,3 +206,38 @@ async def test_new_guild_and_command_removal_are_reconciled(monkeypatch):
     tree.remove_command('addon')
     await tree.reconcile()
     assert all(call.kwargs['payload'] == [] for call in tree._http.bulk_upsert_guild_commands.await_args_list[-2:])
+
+
+@pytest.mark.asyncio
+async def test_global_cleanup_failure_does_not_block_guilds_and_is_retried(monkeypatch):
+    policy(monkeypatch, [123])
+    bot, tree = bot_and_tree()
+    bot._connection._guilds = {i: discord.Object(id=i) for i in [123, 999]}
+    add_slash(tree, "join")
+    tree._http.bulk_upsert_global_commands.side_effect = [
+        RuntimeError("Global endpoint unavailable"),
+        RuntimeError("Global endpoint unavailable"),
+        [],
+    ]
+
+    await tree.reconcile()
+    assert tree._globals_cleared is False
+    calls = tree._http.bulk_upsert_guild_commands.await_args_list
+    assert [call.args[1] for call in calls] == [999, 123]
+    assert calls[0].kwargs["payload"] == []
+    assert calls[1].kwargs["payload"][0]["name"] == "join"
+
+    # Revocation must still remove guild commands while global cleanup fails.
+    policy(monkeypatch)
+    await tree.reconcile()
+    assert tree._globals_cleared is False
+    assert tree._http.bulk_upsert_guild_commands.await_args.args == (42, 123)
+    assert tree._http.bulk_upsert_guild_commands.await_args.kwargs["payload"] == []
+
+    await tree.reconcile()
+    assert tree._globals_cleared is True
+    assert tree._http.bulk_upsert_global_commands.await_count == 3
+    assert tree._http.bulk_upsert_guild_commands.await_count == 3
+    await tree.reconcile()
+    assert tree._http.bulk_upsert_global_commands.await_count == 3
+    await bot.close()

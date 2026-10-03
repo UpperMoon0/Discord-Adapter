@@ -72,7 +72,12 @@ class WhitelistedCommandTree(app_commands.CommandTree):
 
     async def reconcile(self):
         if not self._globals_cleared:
-            await self.sync()
+            try:
+                await self.sync()
+            except Exception:
+                # Global cleanup must not block guild cleanup or publication.
+                # sync marks success only after Discord accepts the request.
+                logger.exception("Failed to clear global commands; will retry")
         # Visit every connected guild, including denied ones, to delete old registrations.
         guilds = sorted(self.client.guilds, key=lambda guild: self.guild_allowed(guild.id))
         for guild in guilds:
@@ -83,4 +88,3 @@ class WhitelistedCommandTree(app_commands.CommandTree):
             except Exception:
                 # Leave the previous fingerprint intact so the next pass retries.
                 logger.exception("Failed to reconcile commands for guild %s", guild.id)
-

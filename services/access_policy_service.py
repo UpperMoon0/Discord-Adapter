@@ -446,6 +446,15 @@ class AccessPolicyService:
         async with self._mutation_lock:
             try:
                 previous = await self._load_authoritative_snapshot()
+                if previous.all_guilds:
+                    # Removing an explicit entry cannot revoke wildcard access,
+                    # and would erase its independent command denial.
+                    self._adopt_authoritative_snapshot(previous)
+                    return {
+                        "success": False,
+                        "message": "Cannot remove an individual guild while all_guilds=true; use an explicit guild policy first",
+                        "policy": self.status(),
+                    }
                 if guild_id not in previous.guilds:
                     self._adopt_authoritative_snapshot(previous)
                     return {"success": True, "changed": False, "policy": self.status()}

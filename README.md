@@ -117,6 +117,8 @@ Policy inspection uses `discord_get_access_policy`; pass `reload=true` when the 
 
 Privileged mutation uses `discord_set_guild_access(guild_id, allowed, commands_allowed=False)` for both allow and remove operations. New grants permit authenticated MCP administration while bot commands remain disabled unless explicitly enabled.
 
+Individual guild removal is rejected while `all_guilds=true`: wildcard access would remain active and deleting an explicit entry could erase its command denial. Switch to an explicit guild policy before removing a guild; rejected removals preserve permissions and do not write a new policy revision or audit mutation.
+
 Discord IDs in MCP arguments and results are decimal **strings**, including nested IDs, mention lists, and pagination cursors. Pass IDs unchanged from discovery results; do not convert them to JavaScript numbers. Counts, durations, and positions remain numeric.
 
 Policy mutation tools require:

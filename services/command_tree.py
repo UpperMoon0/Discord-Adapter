@@ -21,7 +21,7 @@ class WhitelistedCommandTree(app_commands.CommandTree):
         self._globals_cleared = False
 
     def guild_allowed(self, guild_id):
-        return guild_id is not None and access_policy_service.is_guild_allowed(guild_id)
+        return guild_id is not None and access_policy_service.is_guild_commands_allowed(guild_id)
 
     async def interaction_check(self, interaction):
         if self.guild_allowed(interaction.guild_id):

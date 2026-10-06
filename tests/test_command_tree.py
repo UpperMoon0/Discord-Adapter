@@ -241,3 +241,25 @@ async def test_global_cleanup_failure_does_not_block_guilds_and_is_retried(monke
     await tree.reconcile()
     assert tree._http.bulk_upsert_global_commands.await_count == 3
     await bot.close()
+
+@pytest.mark.asyncio
+async def test_mcp_only_guild_blocks_all_command_surfaces(monkeypatch):
+    guild_id = 1315614061261619210
+    monkeypatch.setattr(access_policy_service, "_snapshot", PolicySnapshot(
+        version=1, revision=2, all_guilds=False,
+        guilds=MappingProxyType({guild_id: frozenset()}), source="test",
+        commands_disabled=frozenset({guild_id}),
+    ))
+    bot, tree = bot_and_tree()
+    bot._connection._guilds = {guild_id: discord.Object(id=guild_id)}
+    add_slash(tree, "addon", discord.Object(id=guild_id))
+    async def inspect_message(interaction: discord.Interaction, message: discord.Message):
+        pass
+    tree.add_command(app_commands.ContextMenu(name="Inspect", callback=inspect_message))
+    assert access_policy_service.is_guild_allowed(guild_id)
+    assert not await tree.prefix_check(SimpleNamespace(guild=discord.Object(id=guild_id)))
+    for kind in (discord.InteractionType.application_command, discord.InteractionType.autocomplete):
+        assert not await tree.interaction_check(interaction(guild_id, kind))
+    await tree.reconcile()
+    tree._http.bulk_upsert_guild_commands.assert_awaited_once_with(42, guild_id, payload=[])
+    await bot.close()

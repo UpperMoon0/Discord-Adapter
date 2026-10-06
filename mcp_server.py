@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+from functools import wraps
 from typing import Annotated
 
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import Field
+from utils.discord_ids import Snowflake, stringify_discord_ids
 from starlette.responses import JSONResponse
 
 from mcp_compact_tools import (
@@ -57,7 +59,10 @@ class _DescribedToolServer:
         def decorator(func):
             if func.__name__ in self._excluded_tools:
                 return func
-            return self._server.tool(**metadata)(func)
+            @wraps(func)
+            async def lossless_result(*args, **kwargs):
+                return stringify_discord_ids(await func(*args, **kwargs))
+            return self._server.tool(**metadata)(lossless_result)
 
         return decorator
 
@@ -119,7 +124,7 @@ async def discord_list_servers() -> dict:
     annotations=READ_ONLY,
 )
 async def discord_list_channels(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID from discord_list_servers")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID from discord_list_servers")],
     include_threads: Annotated[bool, Field(description="Include active threads in the result")] = True,
 ) -> dict:
     return await discord_admin_service.list_channels(guild_id, include_threads=include_threads)
@@ -134,10 +139,10 @@ async def discord_list_channels(
     annotations=READ_ONLY,
 )
 async def discord_list_members(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
     limit: Annotated[int, Field(ge=1, le=100, description="Maximum raw members to fetch in this page")] = 50,
     after_user_id: Annotated[
-        int | None,
+        Snowflake | None,
         Field(description="Cursor from the previous page's next_after_user_id; omit for the first page"),
     ] = None,
     include_bots: Annotated[bool, Field(description="Whether bot accounts are included in members")] = True,
@@ -151,7 +156,7 @@ async def discord_list_members(
     annotations=READ_ONLY,
 )
 async def discord_find_members(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
     query: Annotated[str, Field(min_length=1, description="Username, display name, global name, or exact user ID")],
     limit: Annotated[int, Field(ge=1, le=50)] = 20,
 ) -> dict:
@@ -164,8 +169,8 @@ async def discord_find_members(
     annotations=READ_ONLY,
 )
 async def discord_get_member(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    user_id: Annotated[int, Field(description="Discord user ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    user_id: Annotated[Snowflake, Field(description="Discord user ID")],
 ) -> dict:
     return await discord_admin_service.get_member(guild_id, user_id)
 
@@ -176,8 +181,8 @@ async def discord_get_member(
     annotations=READ_ONLY,
 )
 async def discord_read_messages(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    channel_id: Annotated[int, Field(description="Discord text channel ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    channel_id: Annotated[Snowflake, Field(description="Discord text channel ID")],
     limit: Annotated[int, Field(ge=1, le=100)] = 25,
 ) -> dict:
     return await discord_admin_service.read_messages(guild_id, channel_id, limit)
@@ -189,7 +194,7 @@ async def discord_read_messages(
     annotations=READ_ONLY,
 )
 async def discord_list_roles(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
 ) -> dict:
     return await discord_admin_service.list_roles(guild_id)
 
@@ -200,7 +205,7 @@ async def discord_list_roles(
     annotations=READ_ONLY,
 )
 async def discord_get_audit_log(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
     limit: Annotated[int, Field(ge=1, le=100)] = 25,
 ) -> dict:
     return await discord_admin_service.get_audit_log(guild_id, limit)
@@ -215,23 +220,23 @@ async def discord_get_audit_log(
     annotations=WRITE,
 )
 async def discord_send_message(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    channel_id: Annotated[int, Field(description="Discord text channel ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    channel_id: Annotated[Snowflake, Field(description="Discord text channel ID")],
     content: Annotated[str, Field(min_length=1, max_length=2000)],
     mention_user_ids: Annotated[
-        list[int] | None,
+        list[Snowflake] | None,
         Field(description="Discord user IDs to prepend and ping; only these user mentions are allowed"),
     ] = None,
     mention_role_ids: Annotated[
-        list[int] | None,
+        list[Snowflake] | None,
         Field(description="Discord role IDs to prepend and ping; only these role mentions are allowed"),
     ] = None,
     reply_to_message_id: Annotated[
-        int | None,
+        Snowflake | None,
         Field(description="Optional message ID in this channel to reply to without automatically pinging its author"),
     ] = None,
     quote_message_id: Annotated[
-        int | None,
+        Snowflake | None,
         Field(description="Optional message ID in this channel whose author/content should be quoted above the new content"),
     ] = None,
 ) -> dict:
@@ -255,9 +260,9 @@ async def discord_send_message(
     annotations=WRITE,
 )
 async def discord_edit_message(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    channel_id: Annotated[int, Field(description="Discord text channel or thread ID")],
-    message_id: Annotated[int, Field(gt=0, description="Discord message ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    channel_id: Annotated[Snowflake, Field(description="Discord text channel or thread ID")],
+    message_id: Annotated[Snowflake, Field(gt=0, description="Discord message ID")],
     content: Annotated[str, Field(min_length=1, max_length=2000)],
 ) -> dict:
     return await discord_admin_service.edit_message(guild_id, channel_id, message_id, content)
@@ -269,9 +274,9 @@ async def discord_edit_message(
     annotations=DESTRUCTIVE,
 )
 async def discord_delete_message(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    channel_id: Annotated[int, Field(description="Discord text channel ID")],
-    message_id: Annotated[int, Field(description="Discord message ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    channel_id: Annotated[Snowflake, Field(description="Discord text channel ID")],
+    message_id: Annotated[Snowflake, Field(description="Discord message ID")],
     reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
 ) -> dict:
     return await discord_admin_service.delete_message(guild_id, channel_id, message_id, reason)
@@ -282,8 +287,8 @@ async def discord_delete_message(
     annotations=DESTRUCTIVE,
 )
 async def discord_timeout_member(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    user_id: Annotated[int, Field(description="Discord user ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    user_id: Annotated[Snowflake, Field(description="Discord user ID")],
     duration_seconds: Annotated[int, Field(ge=1, le=2_419_200, description="Timeout duration, maximum 28 days")],
     reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
 ) -> dict:
@@ -296,8 +301,8 @@ async def discord_timeout_member(
     annotations=WRITE,
 )
 async def discord_clear_timeout(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    user_id: Annotated[int, Field(description="Discord user ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    user_id: Annotated[Snowflake, Field(description="Discord user ID")],
     reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
 ) -> dict:
     return await discord_admin_service.clear_timeout(guild_id, user_id, reason)
@@ -309,8 +314,8 @@ async def discord_clear_timeout(
     annotations=DESTRUCTIVE,
 )
 async def discord_kick_member(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    user_id: Annotated[int, Field(description="Discord user ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    user_id: Annotated[Snowflake, Field(description="Discord user ID")],
     reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
 ) -> dict:
     return await discord_admin_service.kick_member(guild_id, user_id, reason)
@@ -322,8 +327,8 @@ async def discord_kick_member(
     annotations=DESTRUCTIVE,
 )
 async def discord_ban_member(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    user_id: Annotated[int, Field(description="Discord user ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    user_id: Annotated[Snowflake, Field(description="Discord user ID")],
     reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
     delete_message_seconds: Annotated[int, Field(ge=0, le=604_800)] = 0,
 ) -> dict:
@@ -336,8 +341,8 @@ async def discord_ban_member(
     annotations=WRITE,
 )
 async def discord_unban_member(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    user_id: Annotated[int, Field(description="Discord user ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    user_id: Annotated[Snowflake, Field(description="Discord user ID")],
     reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
 ) -> dict:
     return await discord_admin_service.unban_member(guild_id, user_id, reason)
@@ -349,9 +354,9 @@ async def discord_unban_member(
     annotations=WRITE,
 )
 async def discord_add_role(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    user_id: Annotated[int, Field(description="Discord user ID")],
-    role_id: Annotated[int, Field(description="Discord role ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    user_id: Annotated[Snowflake, Field(description="Discord user ID")],
+    role_id: Annotated[Snowflake, Field(description="Discord role ID")],
     reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
 ) -> dict:
     return await discord_admin_service.add_role(guild_id, user_id, role_id, reason)
@@ -363,9 +368,9 @@ async def discord_add_role(
     annotations=DESTRUCTIVE,
 )
 async def discord_remove_role(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    user_id: Annotated[int, Field(description="Discord user ID")],
-    role_id: Annotated[int, Field(description="Discord role ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    user_id: Annotated[Snowflake, Field(description="Discord user ID")],
+    role_id: Annotated[Snowflake, Field(description="Discord role ID")],
     reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
 ) -> dict:
     return await discord_admin_service.remove_role(guild_id, user_id, role_id, reason)
@@ -377,10 +382,10 @@ async def discord_remove_role(
     annotations=WRITE,
 )
 async def discord_create_text_channel(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
     name: Annotated[str, Field(min_length=1, max_length=100)],
     topic: Annotated[str | None, Field(max_length=1024)] = None,
-    category_id: Annotated[int | None, Field(description="Optional Discord category ID")] = None,
+    category_id: Annotated[Snowflake | None, Field(description="Optional Discord category ID")] = None,
     reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
 ) -> dict:
     return await discord_admin_service.create_text_channel(guild_id, name, topic, category_id, reason)
@@ -392,8 +397,8 @@ async def discord_create_text_channel(
     annotations=WRITE,
 )
 async def discord_update_text_channel(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    channel_id: Annotated[int, Field(description="Discord text channel ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    channel_id: Annotated[Snowflake, Field(description="Discord text channel ID")],
     name: Annotated[str | None, Field(min_length=1, max_length=100)] = None,
     topic: Annotated[str | None, Field(max_length=1024)] = None,
     slowmode_delay: Annotated[int | None, Field(ge=0, le=21_600)] = None,
@@ -408,8 +413,8 @@ async def discord_update_text_channel(
     annotations=DESTRUCTIVE,
 )
 async def discord_delete_channel(
-    guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-    channel_id: Annotated[int, Field(description="Discord channel ID")],
+    guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+    channel_id: Annotated[Snowflake, Field(description="Discord channel ID")],
     reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
 ) -> dict:
     return await discord_admin_service.delete_channel(guild_id, channel_id, reason)
@@ -444,7 +449,7 @@ register_compact_tools(
 )
 
 register_media_tools(
-    mcp_server,
+    _DescribedToolServer(mcp_server),
     discord_media_service,
     READ_ONLY,
 )

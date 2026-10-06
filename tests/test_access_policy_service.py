@@ -203,6 +203,7 @@ async def test_policy_status_reports_store_source_and_revision():
         "configured": True,
         "all_guilds": False,
         "guild_ids": [321],
+        "commands_disabled_guild_ids": [],
         "version": 1,
         "revision": 1,
         "source": "env_bootstrap",
@@ -268,3 +269,75 @@ async def test_close_closes_async_redis_client():
 
     assert redis.closed is True
     assert service.status()["store_ready"] is False
+
+@pytest.mark.asyncio
+async def test_new_mcp_grant_defaults_to_no_commands_and_survives_reload(monkeypatch):
+    monkeypatch.setenv("MCP_POLICY_WRITES_ENABLED", "true")
+    redis = FakeRedis()
+    service = make_service(redis)
+    await service.initialize()
+    guild_id = 1315614061261619210
+    assert (await service.allow_guild(guild_id))["success"]
+    assert service.is_guild_allowed(guild_id)
+    assert not service.is_guild_commands_allowed(guild_id)
+    persisted = json.loads(redis.data[service.policy_key])
+    assert persisted["guilds"][str(guild_id)]["commands_allowed"] is False
+    reloaded = make_service(redis)
+    await reloaded.initialize()
+    assert reloaded.is_guild_allowed(guild_id)
+    assert not reloaded.is_guild_commands_allowed(guild_id)
+    assert (await reloaded.allow_guild(guild_id, commands_allowed=True))["changed"]
+    assert reloaded.is_guild_commands_allowed(guild_id)
+    assert (await reloaded.allow_guild(guild_id, commands_allowed=False))["changed"]
+    assert not reloaded.is_guild_commands_allowed(guild_id)
+    assert (await reloaded.remove_guild(guild_id))["success"]
+    assert guild_id not in reloaded.snapshot.commands_disabled
+
+
+def test_legacy_policy_preserves_command_permission_and_invalid_flags_fail_closed():
+    legacy = {"version": 1, "revision": 1, "guilds": {"123": {"allowed": True}}}
+    snapshot = AccessPolicyService._snapshot_from_payload(json.dumps(legacy), "test")
+    assert 123 not in snapshot.commands_disabled
+    legacy["guilds"]["123"]["commands_allowed"] = "false"
+    with pytest.raises(ValueError, match="commands_allowed"):
+        AccessPolicyService._snapshot_from_payload(json.dumps(legacy), "test")
+
+
+@pytest.mark.asyncio
+async def test_failed_command_permission_change_keeps_previous_snapshot(monkeypatch):
+    monkeypatch.setenv("MCP_POLICY_WRITES_ENABLED", "true")
+    redis = FakeRedis()
+    service = make_service(redis)
+    await service.initialize()
+    await service.allow_guild(123, commands_allowed=True)
+    redis.fail_execute = True
+    assert not (await service.allow_guild(123, commands_allowed=False))["success"]
+    assert service.is_guild_commands_allowed(123)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("commands_allowed", [False, True, None])
+async def test_wildcard_removal_is_rejected_without_changing_permissions(monkeypatch, commands_allowed):
+    monkeypatch.setenv("MCP_POLICY_WRITES_ENABLED", "true")
+    redis = FakeRedis()
+    service = make_service(redis)
+    guild_id = 1315614061261619210
+    guilds = {} if commands_allowed is None else {
+        str(guild_id): {"allowed": True, "commands_allowed": commands_allowed}
+    }
+    raw = json.dumps({"version": 1, "revision": 7, "all_guilds": True, "guilds": guilds})
+    redis.data[service.policy_key] = raw
+    await service.initialize()
+    permission_before = service.is_guild_commands_allowed(guild_id)
+
+    result = await service.remove_guild(guild_id)
+
+    assert result["success"] is False
+    assert "all_guilds=true" in result["message"]
+    assert service.is_guild_allowed(guild_id)
+    assert service.is_guild_commands_allowed(guild_id) is permission_before
+    assert service.snapshot.revision == 7
+    assert redis.data[service.policy_key] == raw
+    assert not redis.lists.get(service.audit_key)
+    await service.reload()
+    assert service.is_guild_commands_allowed(guild_id) is permission_before

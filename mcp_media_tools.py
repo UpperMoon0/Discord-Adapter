@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from pydantic import Field
+from utils.discord_ids import Snowflake
 
 from mcp_media_app import MEDIA_UI_RESOURCE_URI
 
@@ -28,9 +29,9 @@ def register_media_tools(server, service, read_only) -> None:
         annotations=read_only,
     )
     async def discord_list_message_media(
-        guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-        channel_id: Annotated[int, Field(description="Discord text channel or thread ID")],
-        message_id: Annotated[int, Field(description="Discord message ID")],
+        guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+        channel_id: Annotated[Snowflake, Field(description="Discord text channel or thread ID")],
+        message_id: Annotated[Snowflake, Field(description="Discord message ID")],
     ) -> dict:
         return await service.list_message_media(guild_id, channel_id, message_id)
 
@@ -46,9 +47,9 @@ def register_media_tools(server, service, read_only) -> None:
         structured_output=False,
     )
     async def discord_read_message_media(
-        guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-        channel_id: Annotated[int, Field(description="Discord text channel or thread ID")],
-        message_id: Annotated[int, Field(description="Discord message ID")],
+        guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+        channel_id: Annotated[Snowflake, Field(description="Discord text channel or thread ID")],
+        message_id: Annotated[Snowflake, Field(description="Discord message ID")],
         media_index: Annotated[
             int,
             Field(

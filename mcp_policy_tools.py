@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from pydantic import Field
+from utils.discord_ids import Snowflake
 
 
 POLICY_TOOL_NAMES = {
@@ -40,10 +41,12 @@ def register_policy_tools(server, policy_service, read_only, write, destructive)
         annotations=write,
     )
     async def discord_policy_allow_guild(
-        guild_id: Annotated[int, Field(gt=0, description="Discord guild/server ID to allow")],
+        guild_id: Annotated[Snowflake, Field(gt=0, description="Discord guild/server ID to allow")],
+        commands_allowed: Annotated[bool, Field(description="Enable bot commands in this guild")] = False,
     ) -> dict:
         return await policy_service.allow_guild(
             guild_id,
+            commands_allowed=commands_allowed,
             caller_context={"surface": "mcp", "tool": "discord_policy_allow_guild"},
         )
 
@@ -53,7 +56,7 @@ def register_policy_tools(server, policy_service, read_only, write, destructive)
         annotations=destructive,
     )
     async def discord_policy_remove_guild(
-        guild_id: Annotated[int, Field(gt=0, description="Discord guild/server ID to remove")],
+        guild_id: Annotated[Snowflake, Field(gt=0, description="Discord guild/server ID to remove")],
     ) -> dict:
         return await policy_service.remove_guild(
             guild_id,

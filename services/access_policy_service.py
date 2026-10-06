@@ -36,6 +36,7 @@ class PolicySnapshot:
     all_guilds: bool
     guilds: Mapping[int, frozenset[str]]
     source: str
+    commands_disabled: frozenset[int] = frozenset()
 
     @property
     def configured(self) -> bool:
@@ -96,12 +97,16 @@ class AccessPolicyService:
     def is_guild_allowed(self, guild_id: int) -> bool:
         return self._snapshot.allows(guild_id)
 
+    def is_guild_commands_allowed(self, guild_id: int) -> bool:
+        return self.is_guild_allowed(guild_id) and guild_id not in self._snapshot.commands_disabled
+
     def status(self) -> dict[str, Any]:
         snapshot = self._snapshot
         return {
             "configured": snapshot.configured,
             "all_guilds": snapshot.all_guilds,
             "guild_ids": sorted(snapshot.guilds),
+            "commands_disabled_guild_ids": sorted(snapshot.commands_disabled),
             "version": snapshot.version,
             "revision": snapshot.revision,
             "source": snapshot.source,
@@ -148,6 +153,7 @@ class AccessPolicyService:
             raise ValueError("guilds must be an object")
 
         guilds: dict[int, frozenset[str]] = {}
+        commands_disabled: set[int] = set()
         for raw_guild_id, entry in guilds_raw.items():
             try:
                 guild_id = int(raw_guild_id)
@@ -157,6 +163,11 @@ class AccessPolicyService:
                 raise ValueError(f"invalid guild policy entry: {raw_guild_id!r}")
             if entry.get("allowed") is not True:
                 raise ValueError(f"guild {guild_id} must explicitly set allowed=true")
+            commands_allowed = entry.get("commands_allowed", True)
+            if not isinstance(commands_allowed, bool):
+                raise ValueError(f"invalid commands_allowed for guild {guild_id}")
+            if not commands_allowed:
+                commands_disabled.add(guild_id)
             capabilities = entry.get("capabilities", [])
             if not isinstance(capabilities, list) or not all(
                 isinstance(item, str) and item.strip() for item in capabilities
@@ -170,6 +181,7 @@ class AccessPolicyService:
             all_guilds=all_guilds,
             guilds=MappingProxyType(guilds),
             source=source,
+            commands_disabled=frozenset(commands_disabled),
         )
 
     @staticmethod
@@ -182,6 +194,7 @@ class AccessPolicyService:
                 str(guild_id): {
                     "allowed": True,
                     "capabilities": sorted(capabilities),
+                    "commands_allowed": guild_id not in snapshot.commands_disabled,
                 }
                 for guild_id, capabilities in snapshot.guilds.items()
             },
@@ -212,7 +225,7 @@ class AccessPolicyService:
                 logger.warning("Ignoring invalid DISCORD_ADMIN_GUILD_IDS bootstrap entry: %s", value)
                 continue
             if guild_id > 0:
-                guilds[guild_id] = frozenset()
+                guilds.setdefault(guild_id, frozenset())
         if not guilds:
             return None
         return PolicySnapshot(
@@ -229,6 +242,7 @@ class AccessPolicyService:
             "revision": snapshot.revision,
             "all_guilds": snapshot.all_guilds,
             "guild_ids": sorted(snapshot.guilds),
+            "commands_disabled_guild_ids": sorted(snapshot.commands_disabled),
         }
 
     def _audit_entry(
@@ -364,8 +378,11 @@ class AccessPolicyService:
         self,
         guild_id: int,
         *,
+        commands_allowed: bool | None = None,
         caller_context: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if commands_allowed is not None and not isinstance(commands_allowed, bool):
+            return {"success": False, "message": "commands_allowed must be boolean"}
         if guild_id <= 0:
             return {"success": False, "message": "guild_id must be a positive integer"}
         if not self.writes_enabled:
@@ -378,17 +395,24 @@ class AccessPolicyService:
         async with self._mutation_lock:
             try:
                 previous = await self._load_authoritative_snapshot()
-                if previous.allows(guild_id):
+                if previous.allows(guild_id) and (commands_allowed is None or
+                    (guild_id not in previous.commands_disabled) == commands_allowed):
                     self._adopt_authoritative_snapshot(previous)
                     return {"success": True, "changed": False, "policy": self.status()}
                 guilds = dict(previous.guilds)
-                guilds[guild_id] = frozenset()
+                guilds.setdefault(guild_id, frozenset())
+                disabled = set(previous.commands_disabled)
+                if commands_allowed is True:
+                    disabled.discard(guild_id)
+                else:
+                    disabled.add(guild_id)
                 new = PolicySnapshot(
                     version=POLICY_VERSION,
                     revision=max(previous.revision, 0) + 1,
                     all_guilds=previous.all_guilds,
                     guilds=MappingProxyType(guilds),
                     source="redis_runtime",
+                    commands_disabled=frozenset(disabled),
                 )
                 await self._persist_with_audit(
                     action="allow_guild",
@@ -433,6 +457,7 @@ class AccessPolicyService:
                     all_guilds=previous.all_guilds,
                     guilds=MappingProxyType(guilds),
                     source="redis_runtime",
+                    commands_disabled=previous.commands_disabled - {guild_id},
                 )
                 await self._persist_with_audit(
                     action="remove_guild",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from pydantic import Field
+from utils.discord_ids import Snowflake
 
 
 COMPACT_TOOL_NAMES = {
@@ -61,12 +62,12 @@ def register_compact_tools(server, service, policy_service, read_only, write, de
         annotations=read_only,
     )
     async def discord_query_members(
-        guild_id: Annotated[int, Field(description="Discord guild/server ID")],
+        guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
         mode: Annotated[Literal["list", "find", "get"], Field(description="Member query mode")] = "list",
         query: Annotated[str | None, Field(min_length=1, description="Required for mode=find")] = None,
-        user_id: Annotated[int | None, Field(gt=0, description="Required for mode=get")] = None,
+        user_id: Annotated[Snowflake | None, Field(gt=0, description="Required for mode=get")] = None,
         limit: Annotated[int, Field(ge=1, le=100)] = 50,
-        after_user_id: Annotated[int | None, Field(gt=0, description="Pagination cursor for mode=list")] = None,
+        after_user_id: Annotated[Snowflake | None, Field(gt=0, description="Pagination cursor for mode=list")] = None,
         include_bots: Annotated[bool, Field(description="Whether mode=list includes bot accounts")] = True,
     ) -> dict:
         if mode == "list":
@@ -89,7 +90,7 @@ def register_compact_tools(server, service, policy_service, read_only, write, de
     )
     async def discord_direct_messages(
         user_id: Annotated[
-            int | None,
+            Snowflake | None,
             Field(gt=0, description="Discord user ID to read; omit to list known DM conversations"),
         ] = None,
         limit: Annotated[int, Field(ge=1, le=100, description="Message history limit when user_id is provided")] = 25,
@@ -105,10 +106,10 @@ def register_compact_tools(server, service, policy_service, read_only, write, de
         annotations=write,
     )
     async def discord_send_direct_message(
-        user_id: Annotated[int, Field(gt=0, description="Discord user ID")],
+        user_id: Annotated[Snowflake, Field(gt=0, description="Discord user ID")],
         content: Annotated[str, Field(min_length=1, max_length=2000)],
-        reply_to_message_id: Annotated[int | None, Field(gt=0, description="Optional DM message ID to reply to")] = None,
-        quote_message_id: Annotated[int | None, Field(gt=0, description="Optional DM message ID to quote")]=None,
+        reply_to_message_id: Annotated[Snowflake | None, Field(gt=0, description="Optional DM message ID to reply to")] = None,
+        quote_message_id: Annotated[Snowflake | None, Field(gt=0, description="Optional DM message ID to quote")]=None,
     ) -> dict:
         return await service.send_direct_message(
             user_id,
@@ -123,8 +124,8 @@ def register_compact_tools(server, service, policy_service, read_only, write, de
         annotations=destructive,
     )
     async def discord_set_member_timeout(
-        guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-        user_id: Annotated[int, Field(gt=0, description="Discord user ID")],
+        guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+        user_id: Annotated[Snowflake, Field(gt=0, description="Discord user ID")],
         duration_seconds: Annotated[
             int | None,
             Field(ge=1, le=2_419_200, description="Timeout duration; null clears the current timeout"),
@@ -141,9 +142,9 @@ def register_compact_tools(server, service, policy_service, read_only, write, de
         annotations=destructive,
     )
     async def discord_set_member_role(
-        guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-        user_id: Annotated[int, Field(gt=0, description="Discord user ID")],
-        role_id: Annotated[int, Field(gt=0, description="Discord role ID")],
+        guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+        user_id: Annotated[Snowflake, Field(gt=0, description="Discord user ID")],
+        role_id: Annotated[Snowflake, Field(gt=0, description="Discord role ID")],
         assigned: Annotated[bool, Field(description="true assigns the role; false removes it")],
         reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
     ) -> dict:
@@ -160,13 +161,13 @@ def register_compact_tools(server, service, policy_service, read_only, write, de
         annotations=write,
     )
     async def discord_update_channel(
-        guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-        channel_id: Annotated[int, Field(gt=0, description="Discord guild channel ID")],
+        guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+        channel_id: Annotated[Snowflake, Field(gt=0, description="Discord guild channel ID")],
         name: Annotated[str | None, Field(min_length=1, max_length=100)] = None,
         topic: Annotated[str | None, Field(max_length=1024)] = None,
         slowmode_delay: Annotated[int | None, Field(ge=0, le=21_600)] = None,
         position: Annotated[int | None, Field(ge=0)] = None,
-        category_id: Annotated[int | None, Field(gt=0, description="New parent category ID")] = None,
+        category_id: Annotated[Snowflake | None, Field(gt=0, description="New parent category ID")] = None,
         clear_category: bool = False,
         sync_permissions: bool | None = None,
         reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
@@ -193,10 +194,10 @@ def register_compact_tools(server, service, policy_service, read_only, write, de
         annotations=destructive,
     )
     async def discord_set_channel_permissions(
-        guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-        channel_id: Annotated[int, Field(gt=0, description="Discord channel ID")],
+        guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+        channel_id: Annotated[Snowflake, Field(gt=0, description="Discord channel ID")],
         target_type: Annotated[Literal["role", "member"], Field(description="Overwrite target type")],
-        target_id: Annotated[int, Field(gt=0, description="Discord role or member ID")],
+        target_id: Annotated[Snowflake, Field(gt=0, description="Discord role or member ID")],
         permissions: Annotated[
             dict[str, bool | None] | None,
             Field(description="Permission map; required unless clear=true"),
@@ -222,9 +223,9 @@ def register_compact_tools(server, service, policy_service, read_only, write, de
         annotations=destructive,
     )
     async def discord_set_message_pin(
-        guild_id: Annotated[int, Field(description="Discord guild/server ID")],
-        channel_id: Annotated[int, Field(gt=0, description="Discord channel/thread ID")],
-        message_id: Annotated[int, Field(gt=0, description="Discord message ID")],
+        guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
+        channel_id: Annotated[Snowflake, Field(gt=0, description="Discord channel/thread ID")],
+        message_id: Annotated[Snowflake, Field(gt=0, description="Discord message ID")],
         pinned: Annotated[bool, Field(description="true pins the message; false unpins it")],
         reason: Annotated[str, Field(max_length=512)] = "MCP admin action",
     ) -> dict:
@@ -248,18 +249,20 @@ def register_compact_tools(server, service, policy_service, read_only, write, de
         title="Set Discord guild access",
         description=(
             "Privileged policy mutation: allow or remove one Discord guild using allowed=true/false. "
-            "Requires deployment-level MCP_POLICY_WRITES_ENABLED=true."
+            "New grants disable bot commands unless commands_allowed=true. Requires deployment-level MCP_POLICY_WRITES_ENABLED=true."
         ),
         annotations=destructive,
     )
     async def discord_set_guild_access(
-        guild_id: Annotated[int, Field(gt=0, description="Discord guild/server ID")],
+        guild_id: Annotated[Snowflake, Field(gt=0, description="Discord guild/server ID")],
         allowed: Annotated[bool, Field(description="true allows the guild; false removes it")],
+        commands_allowed: Annotated[bool, Field(description="Enable slash, context menu, autocomplete and prefix commands in this guild")] = False,
     ) -> dict:
         tool_name = "discord_set_guild_access"
         if allowed:
             return await policy_service.allow_guild(
                 guild_id,
+                commands_allowed=commands_allowed,
                 caller_context={"surface": "mcp", "tool": tool_name, "allowed": True},
             )
         return await policy_service.remove_guild(

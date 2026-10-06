@@ -115,7 +115,9 @@ Guild checks use an immutable in-memory snapshot and do not perform Redis I/O on
 
 Policy inspection uses `discord_get_access_policy`; pass `reload=true` when the Redis-backed policy must be refreshed first.
 
-Privileged mutation uses `discord_set_guild_access(guild_id, allowed)` for both allow and remove operations.
+Privileged mutation uses `discord_set_guild_access(guild_id, allowed, commands_allowed=False)` for both allow and remove operations. New grants permit authenticated MCP administration while bot commands remain disabled unless explicitly enabled.
+
+Discord IDs in MCP arguments and results are decimal **strings**, including nested IDs, mention lists, and pagination cursors. Pass IDs unchanged from discovery results; do not convert them to JavaScript numbers. Counts, durations, and positions remain numeric.
 
 Policy mutation tools require:
 
@@ -194,7 +196,9 @@ This flow requires Discord Message Content Intent because the adapter reads norm
 
 ### Slash commands
 
-All built-in and addon application commands are published only in guilds allowed by the active Redis access policy. Global registrations and stale registrations in unapproved guilds are removed on startup. Policy changes are reconciled within 30 seconds; revoked guilds are denied immediately at execution, including cached commands, context menus, autocomplete, and addon prefix commands. DMs cannot invoke bot commands. `DISCORD_CHAT_GUILD_IDS` remains a separate Lily-Core chat setting.
+All built-in and addon application commands are published only in guilds allowed by the active Redis access policy **and** enabled for bot commands. Per-guild `commands_allowed=false` blocks publication and execution of slash commands, context menus, autocomplete, and prefix commands while preserving MCP access. Global registrations and stale registrations in unapproved guilds are removed on startup. Policy changes are reconciled within 30 seconds; revoked guilds are denied immediately at execution, including cached commands, context menus, autocomplete, and addon prefix commands. DMs cannot invoke bot commands. Legacy stored guild entries without `commands_allowed` retain their existing command permission; new grants default to disabled. `DISCORD_CHAT_GUILD_IDS` remains a separate Lily-Core chat setting and MCP approval does not enable Lily-Core chat.
+
+For example, grant MCP-only access to NsTut with `discord_set_guild_access(guild_id="1315614061261619210", allowed=True, commands_allowed=False)`. Keep this guild out of `DISCORD_CHAT_GUILD_IDS` to prevent message-driven Lily sessions as well.
 
 The built-in application commands are:
 

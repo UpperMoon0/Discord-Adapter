@@ -72,9 +72,8 @@ The webhook JSON contains only:
 ```
 
 The headers include `Content-Type: application/json`,
-`X-Discord-Event-ID`, and `X-Discord-Event-Signature: sha256=HEX_DIGEST`.
-The hex digest is `HMAC-SHA256(secret, exact UTF-8 request bytes)`. Verify it
-with a constant-time comparison **before** parsing or acting on the event.
+`X-Discord-Event-ID`, `X-Discord-Event-Timestamp`, and `X-Discord-Event-Signature: sha256=HEX_DIGEST`.
+The hex digest is `HMAC-SHA256(secret, ASCII_timestamp + b\".\" + exact_UTF8_request_bytes)`, with `ASCII_timestamp` from the `X-Discord-Event-Timestamp` header (Unix seconds). Verify the HMAC in constant time, reject timestamps older than 5 minutes or too far in the future, and de-duplicate event IDs **before** acting on the event.
 Treat the body and attachment URLs as untrusted user input. Use the
 `event_id` for consumer-side deduplication.
 

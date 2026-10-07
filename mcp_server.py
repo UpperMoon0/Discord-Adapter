@@ -22,6 +22,7 @@ from mcp_compact_tools import (
 from mcp_extended_tools import register_extended_tools
 from mcp_media_app import build_media_apps_extension
 from mcp_media_tools import register_media_tools
+from mcp_image_tools import register_image_tools
 from mcp_policy_tools import register_policy_tools
 from services.access_policy_service import access_policy_service
 from services.discord_media_service import discord_media_service
@@ -453,6 +454,7 @@ register_media_tools(
     discord_media_service,
     READ_ONLY,
 )
+register_image_tools(_DescribedToolServer(mcp_server), write=WRITE)
 
 
 @mcp_server.custom_route("/health", methods=["GET"])

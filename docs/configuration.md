@@ -61,6 +61,19 @@ Attachments from already-authorized Discord messages are inspected through Disco
 
 The Docker image installs `ffmpeg`, which also provides `ffprobe`. Static-image normalization does not run `ffprobe`; duration probing is reserved for animated images and video sampling.
 
+## MCP image upload and event relay
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DISCORD_IMAGE_MAX_UPLOAD_BYTES` | `8388608` (8 MiB) | Maximum decoded image bytes for `discord_send_image`. Cannot be raised above 8 MiB without code changes. |
+| `DISCORD_EVENT_WEBHOOK_URL` | unset | Enables outbound HTTPS delivery of scoped new-message events to an external automation worker, not ChatGPT Work. |
+| `DISCORD_EVENT_WEBHOOK_SECRET` | unset | HMAC signing key of at least 32 bytes. |
+| `DISCORD_EVENT_GUILD_IDS` | empty | Required guild allowlist; Redis MCP policy must also allow these guilds. |
+| `DISCORD_EVENT_CHANNEL_IDS` | empty | Required channel allowlist. |
+| `DISCORD_EVENT_USER_IDS` | empty | Optional user filter; empty means all users in allowed channels. |
+
+Nothing posts automatically to Discord on startup. Image sending requires an explicit authenticated MCP call. The webhook relay is disabled unless configured and never sends a Discord message. See [Images and event relay](events-and-images.md) for HMAC verification and delivery limits.
+
 ## Concurrency and rate limits
 
 | Variable | Default | Purpose |

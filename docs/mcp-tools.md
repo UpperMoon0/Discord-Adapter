@@ -1,6 +1,6 @@
 # MCP tool reference
 
-Discord Adapter advertises exactly 52 semantic Discord tools. The runtime test suite asserts the inventory, descriptions, and destructive annotations.
+Discord Adapter advertises exactly 54 semantic Discord tools. The runtime test suite asserts the inventory, descriptions, and destructive annotations.
 
 Guild-scoped tools require an explicit `guild_id` from an allowed server. Direct-message tools use a separate bounded target rule described below. MCP authentication, the Redis guild policy, Discord permissions, and Discord role hierarchy still apply.
 
@@ -48,6 +48,7 @@ Create/update/delete CRUD tools remain separate where their required inputs or d
 | Tool | Impact | Purpose |
 | --- | --- | --- |
 | `discord_send_message` | Write | Send a guild message with mentions suppressed by default; supports explicit user/role pings, replies, and quotes. |
+| `discord_send_image` | Write | Upload an actual PNG/JPEG/WebP/GIF attachment from base64; optional caption/reply; pings always disabled. |
 | `discord_delete_message` | Destructive | Delete one specific guild message. |
 | `discord_set_message_pin` | Destructive | Pin or unpin one message with `pinned=true/false`. |
 | `discord_purge_messages` | Destructive | Scan up to 100 recent messages and delete matches, optionally filtered by author and/or substring. |

@@ -63,12 +63,14 @@ class MessageController:
         *,
         allowed_chat_guild_ids: frozenset[int] | set[int] | None = None,
         allowed_chat_channel_ids: frozenset[int] | set[int] | None = None,
+        event_relay=None,
     ):
         self.bot = bot
         self.session_service = session_service
         self.lily_core_service = lily_core_service
         self.concurrency_manager = concurrency_manager
         self.user_rate_limiter = user_rate_limiter
+        self.event_relay = event_relay
         self.allowed_chat_guild_ids = frozenset(
             allowed_chat_guild_ids
             if allowed_chat_guild_ids is not None
@@ -118,6 +120,14 @@ class MessageController:
         # Never let another bot manufacture Lily sessions or consume the queue.
         if getattr(message.author, "bot", False):
             return
+
+        # An opt-in signed webhook relay sees new messages independently of
+        # Lily-Core sessions. It is fail-closed and never sends to Discord.
+        if self.event_relay is not None:
+            try:
+                await self.event_relay.observe(message)
+            except Exception:
+                logger.exception("Discord event relay failed to observe a message")
 
         # Discord-native commands/addons are independent from Lily-Core chat trust.
         await self.bot.process_commands(message)

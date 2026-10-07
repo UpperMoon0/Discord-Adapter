@@ -127,3 +127,34 @@ async def test_bot_authored_messages_are_ignored_before_commands_or_chat():
 
     bot.process_commands.assert_not_awaited()
     lily_core_service.send_chat_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_gateway_message_is_relayed_without_starting_lily_chat_or_sending_discord_message():
+    controller, bot, sessions, _ = _controller()
+    relay = MagicMock()
+    relay.observe = AsyncMock(return_value=True)
+    controller.event_relay = relay
+    sessions.is_wake_phrase.return_value = False
+    sessions.is_goodbye_phrase.return_value = False
+    sessions.is_session_active.return_value = False
+    message = _message(content="Can you help me join?", bot=False)
+
+    await controller.on_message(message)
+
+    relay.observe.assert_awaited_once_with(message)
+    bot.process_commands.assert_awaited_once_with(message)
+    message.channel.send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_gateway_event_relay_ignores_other_bots():
+    controller, bot, _, _ = _controller()
+    relay = MagicMock()
+    relay.observe = AsyncMock()
+    controller.event_relay = relay
+
+    await controller.on_message(_message(content="Ignore me", bot=True))
+
+    relay.observe.assert_not_awaited()
+    bot.process_commands.assert_not_awaited()

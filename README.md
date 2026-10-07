@@ -15,13 +15,15 @@ Do not assume those surfaces share authentication. MCP OAuth and the Redis guild
 - Discord bot integration with Lily-Core
 - FastAPI health/readiness endpoints
 - Streamable HTTP MCP endpoint at `/mcp/`
-- 52 semantic Discord administration MCP tools after consolidating redundant inverse/query operations
+- 54 semantic Discord administration MCP tools after consolidating redundant inverse/query operations
 - Self-hosted OAuth 2.0 authorization-code + PKCE flow
 - Redis-backed runtime guild access policy with an immutable in-memory snapshot
 - One-time migration/bootstrap from `DISCORD_ADMIN_GUILD_IDS`
 - Deployment-gated runtime policy writes, disabled by default
 - Bounded Redis audit history for policy mutations
 - Read-only inspection of images, GIFs, and videos attached to Discord messages
+- Safe MCP image uploads (PNG, JPEG, WebP, GIF) as actual Discord attachments, with mentions disabled
+- Opt-in signed message-created event relay for a separate automation worker (not a native ChatGPT Work trigger)
 - Explicit user/role mentions, replies, and quotes for MCP-sent guild messages
 - Read/reply support for bot direct messages with bounded DM target resolution
 - Independently packaged Discord addons through Python entry points
@@ -30,9 +32,10 @@ Do not assume those surfaces share authentication. MCP OAuth and the Redis guild
 ## Documentation
 
 - [Configuration](docs/configuration.md) — every runtime environment variable and fail-closed behavior
-- [MCP tool reference](docs/mcp-tools.md) — complete 52-tool inventory, consolidation map, and important semantics
+- [MCP tool reference](docs/mcp-tools.md) — complete 54-tool inventory, consolidation map, and important semantics
 - [HTTP and WebSocket API](docs/http-api.md) — health, OAuth, legacy bot-control, and cookie routes
 - [Addon development](docs/addons.md) — stable addon contract, lifecycle, configuration, and deployment
+- [Images and event relay](docs/events-and-images.md) — attachment sending, signed webhooks, and Work integration limits
 
 ## Prerequisites
 
@@ -180,6 +183,8 @@ The MCP surface covers:
 
 Messages sent through MCP suppress Discord mentions by default. `discord_send_message` can explicitly ping selected users or roles with `mention_user_ids` / `mention_role_ids`, reply with `reply_to_message_id`, or quote with `quote_message_id`. `@everyone` and `@here` are never enabled. Replies do not automatically ping the referenced author unless that user is explicitly selected.
 
+`discord_send_image` sends an actual attachment from bounded base64 bytes, optionally with a caption or reply, without pinging anyone. It cannot read ChatGPT sandbox paths directly. See [Images and event relay](docs/events-and-images.md).
+
 `discord_read_messages` returns jump URLs and reply/reference metadata. For the first/default visual attachment or embed, call `discord_read_message_media` directly with `media_index=0`. Use `discord_list_message_media` only when metadata is needed or when selecting among multiple media items. GIFs and videos are sampled into representative frames, and larger static images are normalized before return.
 
 MCP does not bypass Discord permissions or role hierarchy. Grant only the Discord permissions the bot needs rather than `Administrator` where practical.
@@ -273,4 +278,4 @@ Legacy HTTP routes are outside those four MCP layers and need deployment-level n
 
 Source CI builds the Docker image, runs Python syntax compilation, executes the pytest suite, starts a Redis sidecar, launches the adapter container with `REDIS_URL`, and requires `/health` to report `mcp_policy_store_ready=true`.
 
-Tests cover policy bootstrap and fail-closed behavior, Redis authority, runtime mutation/reload, atomic snapshot preservation, policy-write gating, audit persistence, the complete 52-tool MCP surface, rich message arguments, destructive annotations, extended Discord operations, media inspection, OAuth, addon lifecycle, and message-controller behavior.
+Tests cover policy bootstrap and fail-closed behavior, Redis authority, runtime mutation/reload, atomic snapshot preservation, policy-write gating, audit persistence, the complete 54-tool MCP surface, rich message arguments, destructive annotations, extended Discord operations, media inspection, OAuth, addon lifecycle, and message-controller behavior.

@@ -49,7 +49,6 @@ async def test_upload_is_real_discord_file_without_mentions_or_reply_ping():
     assert result["size_bytes"] == 32
     kwargs = admin.channel.send.await_args.kwargs
     assert kwargs["file"].filename == "image.png"
-    assert kwargs["caption"] if False else True  # text is sent using Discord's content field
     assert kwargs["content"] == "Image @everyone <@123>"
     assert kwargs["allowed_mentions"].everyone is False
     assert kwargs["allowed_mentions"].users is False

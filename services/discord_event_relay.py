@@ -13,6 +13,7 @@ import hmac
 import json
 import logging
 import os
+import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Awaitable, Callable
@@ -158,10 +159,13 @@ class DiscordEventRelay:
             self.dropped += 1
             return
         body = json.dumps(event, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        signature = hmac.new(self.config.secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+        timestamp = str(int(time.time()))
+        signed = timestamp.encode("ascii") + b"." + body
+        signature = hmac.new(self.config.secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
         headers = {
             "Content-Type": "application/json",
             "X-Discord-Event-ID": event["event_id"],
+            "X-Discord-Event-Timestamp": timestamp,
             "X-Discord-Event-Signature": f"sha256={signature}",
         }
         for attempt in range(3):

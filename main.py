@@ -26,6 +26,7 @@ from services.access_policy_service import access_policy_service
 from services.addon_manager import AddonManager
 from services.bot_service import bot_service
 from services.concurrency_manager import ConcurrencyManager, RateLimitConfig, UserRateLimiter
+from services.discord_event_relay import DiscordEventRelay
 from services.lily_core_service import LilyCoreService
 from services.music_service import MusicService
 from services.session_service import SessionService
@@ -174,6 +175,7 @@ class DiscordAdapterBot(commands.Bot):
     def __init__(self, *args, addon_manager: AddonManager, **kwargs):
         super().__init__(*args, **kwargs)
         self.addon_manager = addon_manager
+        self.event_relay = None
         self._command_policy_task = None
         self.add_check(self.tree.prefix_check)
 
@@ -198,6 +200,8 @@ class DiscordAdapterBot(commands.Bot):
             self._command_policy_task.cancel()
             await asyncio.gather(self._command_policy_task, return_exceptions=True)
             self._command_policy_task = None
+        if self.event_relay is not None:
+            await self.event_relay.close()
         await super().close()
 
 
@@ -218,6 +222,9 @@ def create_discord_bot():
         tree_cls=WhitelistedCommandTree,
     )
 
+    # Real-time webhook delivery is opt-in and does not create ChatGPT task triggers.
+    bot.event_relay = DiscordEventRelay.from_env()
+
     # This bridge uses DISCORD_CHAT_GUILD_IDS, which is separate from MCP's
     # Redis policy. Full MCP administration remains available for every MCP-
     # allowed guild even when that guild cannot send chat into Lily-Core.
@@ -227,6 +234,7 @@ def create_discord_bot():
         lily_core_service,
         concurrency_manager,
         user_rate_limiter,
+        event_relay=bot.event_relay,
     )
     command_controller = CommandController(
         bot,

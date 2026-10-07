@@ -36,6 +36,19 @@ def test_disabled_without_explicit_webhook(monkeypatch):
     assert EventRelayConfig.from_env() is None
 
 
+def test_relay_from_env_disables_invalid_optional_configuration(monkeypatch, caplog):
+    monkeypatch.setenv("DISCORD_EVENT_WEBHOOK_URL", "https://automation.example.org/events")
+    monkeypatch.delenv("DISCORD_EVENT_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("DISCORD_EVENT_GUILD_IDS", raising=False)
+    monkeypatch.delenv("DISCORD_EVENT_CHANNEL_IDS", raising=False)
+
+    relay = DiscordEventRelay.from_env()
+
+    assert relay.enabled is False
+    assert relay.config is None
+    assert "event relay disabled due to invalid configuration" in caplog.text.lower()
+
+
 def test_event_config_is_fail_closed(monkeypatch):
     monkeypatch.setenv("DISCORD_EVENT_WEBHOOK_URL", "http://localhost/events")
     with pytest.raises(ValueError, match="HTTPS"):

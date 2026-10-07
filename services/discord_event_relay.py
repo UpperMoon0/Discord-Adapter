@@ -92,7 +92,13 @@ class DiscordEventRelay:
 
     @classmethod
     def from_env(cls) -> "DiscordEventRelay":
-        return cls(EventRelayConfig.from_env())
+        """Build the optional relay without allowing bad optional config to stop the bot."""
+        try:
+            config = EventRelayConfig.from_env()
+        except ValueError as exc:
+            logger.warning("Discord event relay disabled due to invalid configuration: %s", exc)
+            config = None
+        return cls(config)
 
     @property
     def enabled(self) -> bool:

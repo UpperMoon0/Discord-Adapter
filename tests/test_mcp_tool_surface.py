@@ -9,6 +9,7 @@ from mcp_compact_tools import (
 )
 from mcp_extended_tools import EXTENDED_TOOL_NAMES
 from mcp_media_tools import MEDIA_TOOL_NAMES
+from mcp_image_tools import IMAGE_TOOL_NAMES
 from mcp_policy_tools import POLICY_TOOL_NAMES
 from mcp_server import mcp_server
 
@@ -51,10 +52,11 @@ async def test_runtime_mcp_tool_surface_is_compact_complete_and_described():
         | (POLICY_TOOL_NAMES - LEGACY_POLICY_TOOL_NAMES)
         | COMPACT_TOOL_NAMES
         | MEDIA_TOOL_NAMES
+        | IMAGE_TOOL_NAMES
     )
 
     assert set(tools) == expected
-    assert len(tools) == 53
+    assert len(tools) == 54
     assert all(tool.description and tool.description.strip() for tool in tools.values())
 
 

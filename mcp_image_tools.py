@@ -27,7 +27,7 @@ def register_image_tools(server, service=discord_image_service, write=None):
     async def discord_send_image(
         guild_id: Annotated[Snowflake, Field(description="Discord guild/server ID")],
         channel_id: Annotated[Snowflake, Field(description="Discord text channel ID")],
-        image_base64: Annotated[str, Field(min_length=8, description="Base64-encoded image bytes (no data-URL prefix)")],
+        image_base64: Annotated[str, Field(min_length=8, max_length=11_184_816, description="Base64-encoded image bytes (no data-URL prefix, max 8 MiB decoded)")],
         filename: Annotated[str, Field(max_length=100, description="Safe image filename and extension")] = "image.png",
         caption: Annotated[str, Field(max_length=2000, description="Optional plain-text caption; no pings")] = "",
         reply_to_message_id: Annotated[

@@ -1,6 +1,6 @@
 # MCP tool reference
 
-Discord Adapter advertises exactly 52 semantic Discord tools. The runtime test suite asserts the inventory, descriptions, and destructive annotations.
+Discord Adapter advertises exactly 54 semantic Discord tools. The runtime test suite asserts the inventory, descriptions, and destructive annotations.
 
 Guild-scoped tools require an explicit `guild_id` from an allowed server. Direct-message tools use a separate bounded target rule described below. MCP authentication, the Redis guild policy, Discord permissions, and Discord role hierarchy still apply.
 

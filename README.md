@@ -32,7 +32,7 @@ Do not assume those surfaces share authentication. MCP OAuth and the Redis guild
 ## Documentation
 
 - [Configuration](docs/configuration.md) — every runtime environment variable and fail-closed behavior
-- [MCP tool reference](docs/mcp-tools.md) — complete 52-tool inventory, consolidation map, and important semantics
+- [MCP tool reference](docs/mcp-tools.md) — complete 54-tool inventory, consolidation map, and important semantics
 - [HTTP and WebSocket API](docs/http-api.md) — health, OAuth, legacy bot-control, and cookie routes
 - [Addon development](docs/addons.md) — stable addon contract, lifecycle, configuration, and deployment
 - [Images and event relay](docs/events-and-images.md) — attachment sending, signed webhooks, and Work integration limits
@@ -278,4 +278,4 @@ Legacy HTTP routes are outside those four MCP layers and need deployment-level n
 
 Source CI builds the Docker image, runs Python syntax compilation, executes the pytest suite, starts a Redis sidecar, launches the adapter container with `REDIS_URL`, and requires `/health` to report `mcp_policy_store_ready=true`.
 
-Tests cover policy bootstrap and fail-closed behavior, Redis authority, runtime mutation/reload, atomic snapshot preservation, policy-write gating, audit persistence, the complete 52-tool MCP surface, rich message arguments, destructive annotations, extended Discord operations, media inspection, OAuth, addon lifecycle, and message-controller behavior.
+Tests cover policy bootstrap and fail-closed behavior, Redis authority, runtime mutation/reload, atomic snapshot preservation, policy-write gating, audit persistence, the complete 54-tool MCP surface, rich message arguments, destructive annotations, extended Discord operations, media inspection, OAuth, addon lifecycle, and message-controller behavior.

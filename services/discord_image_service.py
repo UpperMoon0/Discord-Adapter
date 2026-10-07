@@ -16,7 +16,6 @@ import discord
 
 from services.discord_admin_service import DiscordAdminService, discord_admin_service
 
-_ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "gif"}
 _SAFE_FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\.(?:png|jpg|jpeg|webp|gif)$", re.I)
 _DEFAULT_MAX_BYTES = 8 * 1024 * 1024
 

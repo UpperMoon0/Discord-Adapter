@@ -77,7 +77,8 @@ async def test_publishes_scoped_hmac_signed_event_once_with_string_ids():
         "attachments": [{"filename": "error.png", "url": "https://cdn.discordapp.com/a.png"}],
     }
     assert headers["X-Discord-Event-ID"] == "1000"
-    expected = hmac.new(_config().secret.encode(), body, hashlib.sha256).hexdigest()
+    signed = headers["X-Discord-Event-Timestamp"].encode() + b"." + body
+    expected = hmac.new(_config().secret.encode(), signed, hashlib.sha256).hexdigest()
     assert headers["X-Discord-Event-Signature"] == "sha256=" + expected
     assert relay.delivered == 1
     await relay.close()
@@ -96,11 +97,14 @@ async def test_filters_bots_wrong_users_guilds_and_channels_without_network():
 
 @pytest.mark.asyncio
 async def test_revocation_before_delivery_suppresses_outbound_webhook():
-    allowed = False
+    allowed = True
     sender = AsyncMock(return_value=202)
     relay = DiscordEventRelay(_config(), guild_allowed=lambda _: allowed, sender=sender)
-    assert await relay.observe(_message()) is False
+    assert await relay.observe(_message()) is True
+    allowed = False
+    await asyncio.wait_for(relay._queue.join(), timeout=1)
     sender.assert_not_awaited()
+    assert relay.dropped == 1
     await relay.close()
 
 

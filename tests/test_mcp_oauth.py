@@ -451,3 +451,29 @@ def test_sentinel_configuration_requires_no_owner_secret(monkeypatch):
     binding = cfg.state_binding
     monkeypatch.setenv("MCP_OAUTH_OWNER_TOKEN", "obsolete-secret-must-be-ignored")
     assert OAuthConfig.from_env().state_binding == binding
+
+
+def test_legacy_discord_secret_digest_survives_sentinel_migration(tmp_path):
+    manager, client = make_client(tmp_path)
+    registration = client.post("/oauth/register", json={
+        "redirect_uris": [REDIRECT], "token_endpoint_auth_method": "client_secret_basic",
+    }).json()
+    path = Path(manager.config.state_path)
+    state = json.loads(path.read_text())
+    digest = hashlib.sha256(registration["client_secret"].encode()).digest()
+    state["clients"][registration["client_id"]]["secret_hash"] = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    state.pop("auth_binding")
+    state["owner_fingerprint"] = "retired-owner-binding"
+    state["access"] = {_hash("retired-access-token"): {
+        "client_id": registration["client_id"], "scope": "mcp", "expires": 9999999999,
+    }}
+    path.write_text(json.dumps(state))
+    manager, client = make_client(tmp_path)
+    assert not manager.valid_access_token("retired-access-token")
+    approval = approve(client, start(client, registration))
+    code = parse_qs(urlparse(approval.headers["location"]).query)["code"][0]
+    result = client.post("/oauth/token", auth=(registration["client_id"], registration["client_secret"]),
+                         data={"grant_type": "authorization_code", "code": code,
+                               "redirect_uri": REDIRECT, "code_verifier": VERIFIER})
+    assert result.status_code == 200, result.text
+    assert manager.valid_access_token(result.json()["access_token"])

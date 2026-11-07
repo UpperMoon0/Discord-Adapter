@@ -614,6 +614,15 @@ class MCPOAuthManager:
         except (OSError, ValueError):
             return
         self.clients = raw.get("clients", {})
+        # The retired Discord issuer stored SHA-256 client-secret digests as
+        # unpadded base64url. Preserve client registrations in the new hex format;
+        # access/refresh grants still require the Sentinel binding below.
+        for client in self.clients.values():
+            digest = client.get("secret_hash", "")
+            if isinstance(digest, str) and re.fullmatch(r"[A-Za-z0-9_-]{43}", digest):
+                decoded = base64.urlsafe_b64decode(digest + "=")
+                if len(decoded) == 32:
+                    client["secret_hash"] = decoded.hex()
         if raw.get("auth_binding") != _hash(self.config.state_binding):
             return
         self.access = raw.get("access", {})
